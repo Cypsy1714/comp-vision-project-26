@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv / virtualenvs
+.venv/
+.python-version
+
+# Pipeline working dirs and trained bundles (regenerable)
+runs/
+weights/
+
+# Model checkpoints / arrays
+*.pt
+*.pth
+*.onnx
+*.npz
+
+# Generated fixture media (regenerate with: python scripts/make_fixtures.py)
+# READMEs under test_sets/ are kept (negated below).
+test_sets/**/*.jpg
+test_sets/**/*.jpeg
+test_sets/**/*.png
+test_sets/**/*.csv
+test_sets/**/*.json
+!test_sets/README.md
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

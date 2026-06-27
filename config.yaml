@@ -1,0 +1,39 @@
+# shared
+image_size: 224        # imagenet default (216 optional)
+num_classes: 20
+seed: 1337
+device: auto
+
+# step order — add/remove/reorder
+pipeline: [detector, views, cnn, meta]
+
+paths:
+  input: input
+  crops: output/crops
+  views: output/views
+  scores: output/scores
+  preds: output/predictions
+
+# part 1 — A
+detector:
+  weights: yolo11l.pt
+  conf: 0.25
+  reject_on_no_animal: true   # toggle
+
+# part 2 — B
+views:
+  active: [clean, hflip, blur, gray, sobel]   # K = length of this list
+
+# part 3 — C
+cnn:
+  backbone: efficientnet_b0
+  pretrained: true
+  head: {epochs: 5, lr: 0.001}
+  full: {epochs: 30, lr: 0.0001}
+  batch_size: 32
+
+# part 4 — D
+meta:
+  reject_enabled: true        # toggle
+  threshold: 0.5
+  hidden: [256, 128]

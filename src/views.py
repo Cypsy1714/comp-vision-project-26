@@ -58,6 +58,9 @@ def make(im, v):
 
          return ImageChops.multiply(base, edges)
     
+    if v == "comic_clean":
+        return ligne_claire(im)
+    
     if v == "random_sudoku_region":
         return random_region_sudoku(im, region_size=0.45, grid=4)
     
@@ -110,6 +113,11 @@ def make(im, v):
         return Image.fromarray(out.astype(np.uint8))
     
 
+    if v == "inception_fold":
+        return inception_fold(im)
+
+    if v == "warhol_random_fill":
+        return warhol_random_fill(im)
 
     if v == "picasso":
         im = im.convert("RGB")
@@ -124,8 +132,8 @@ def make(im, v):
 
     # Resmi rastgele parçalara bölüp oynat
         for _ in range(88):
-            bw = random.randint(w // 8, w // 3)
-            bh = random.randint(h // 8, h // 3)
+            bw = random.randint(w // 10, w // 5)
+            bh = random.randint(h // 10, h // 5)
 
             x = random.randint(0, w - bw)
             y = random.randint(0, h - bh)
@@ -152,7 +160,11 @@ def make(im, v):
         return triangle_sudoku(im, grid=2)
     
 
+    if v == "hide_and_seek":
+        return hide_and_seek(im, grid=4, hide_prob=0.5)
     
+    if v == "random_value_fill":
+        return random_value_fill(im)
     
 
     if v == "color_jitter":
@@ -184,7 +196,107 @@ def wave_effect(im, amplitude=20, frequency=2):
 
     return Image.fromarray(out)
 
+def warhol_random_fill(im):
+    im = im.convert("RGB")
 
+    # Warhol / pop-art görünümü
+    im = ImageEnhance.Contrast(im).enhance(1.8)
+    im = ImageEnhance.Color(im).enhance(2.4)
+    im = ImageOps.posterize(im, bits=2)
+
+    arr = np.array(im).copy()
+    gray = np.array(im.convert("L"))
+
+    out = np.zeros_like(arr)
+
+    out[gray < 64] = [120, 40, 255]
+    out[(gray >= 64) & (gray < 128)] = [255, 30, 80]
+    out[(gray >= 128) & (gray < 192)] = [30, 220, 255]
+    out[gray >= 192] = [255, 230, 30]
+
+    # Random value fill
+    h, w, _ = out.shape
+
+    fill_w = random.randint(w // 8, w // 3)
+    fill_h = random.randint(h // 8, h // 3)
+
+    x = random.randint(0, w - fill_w)
+    y = random.randint(0, h - fill_h)
+
+    random_patch = np.random.randint(
+        0, 256,
+        size=(fill_h, fill_w, 3),
+        dtype=np.uint8
+    )
+
+    out[y:y+fill_h, x:x+fill_w] = random_patch
+
+    return Image.fromarray(out.astype(np.uint8))
+
+def random_value_fill(im):
+    arr = np.array(im.convert("RGB")).copy()
+
+    h, w, _ = arr.shape
+
+    fill_w = random.randint(w // 8, w // 3)
+    fill_h = random.randint(h // 8, h // 3)
+
+    x = random.randint(0, w - fill_w)
+    y = random.randint(0, h - fill_h)
+
+    random_patch = np.random.randint(
+        0, 256,
+        size=(fill_h, fill_w, 3),
+        dtype=np.uint8
+    )
+
+    arr[y:y+fill_h, x:x+fill_w] = random_patch
+
+    return Image.fromarray(arr)
+
+def hide_and_seek(im, grid=4, hide_prob=0.5):
+    im = im.convert("RGB")
+    arr = np.array(im).copy()
+
+    h, w, _ = arr.shape
+    cell_w = w // grid
+    cell_h = h // grid
+
+    for y in range(grid):
+        for x in range(grid):
+            if random.random() < hide_prob:
+                x0 = x * cell_w
+                y0 = y * cell_h
+                x1 = (x + 1) * cell_w if x < grid - 1 else w
+                y1 = (y + 1) * cell_h if y < grid - 1 else h
+
+                arr[y0:y1, x0:x1] = [0, 0, 0]
+
+    return Image.fromarray(arr)
+
+def inception_fold(im):
+    im = im.convert("RGB")
+    w, h = im.size
+
+    out = im.copy()
+
+    # Alt kısmı zemin gibi al
+    ground = im.crop((0, h // 2, w, h))
+
+    # Zemini dikey çevir: yukarı kıvrılmış gibi
+    folded = ImageOps.flip(ground)
+
+    # Daha karanlık/kontrastlı yap
+    folded = ImageEnhance.Contrast(folded).enhance(1.3)
+    folded = ImageEnhance.Brightness(folded).enhance(0.85)
+
+    # Üst yarıya sığdır
+    folded = folded.resize((w, h // 2))
+
+    # Hafif transparan bindirme hissi
+    out.paste(folded, (0, 0))
+
+    return out
 
 def triangle_sudoku(im, grid=4):
     im = im.convert("RGB")
@@ -242,6 +354,30 @@ def triangle_sudoku(im, grid=4):
             out.paste(tri2, (x0, y0), mask2)
 
     return out
+
+
+def ligne_claire(im):
+    im = im.convert("RGB")
+
+    # Renkleri sadeleştir
+    base = ImageEnhance.Color(im).enhance(1.4)
+    base = ImageEnhance.Contrast(base).enhance(1.2)
+    base = ImageOps.posterize(base, bits=4)
+    base = base.filter(ImageFilter.SMOOTH_MORE)
+
+    # Temiz siyah çizgiler
+    gray = im.convert("L")
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    edges = ImageOps.invert(edges)
+
+    # Çizgileri sertleştir
+    edges = edges.point(lambda x: 255 if x > 150 else 0)
+
+    # Çizgileri biraz kalınlaştır
+    edges = edges.filter(ImageFilter.MinFilter(3))
+    edges = edges.convert("RGB")
+
+    return ImageChops.multiply(base, edges)
 
 def sudoku_shuffle(im, grid=4):
     im = im.convert("RGB")

@@ -22,7 +22,7 @@ detector:
 
 # part 2 — B
 views:
-  active: [clean, hflip, blur, gray, sobel, more_blur, most_blur, perspective, wave, pop_art, warhol, picasso, triangle_sudoku, random_sudoku_region, cartoon, extra_perspective, sudoku, solarize, solarize_light, solarize_dark, posterize, equalize, color_jitter]   # K = length of this list
+  active: [clean, hflip, blur, gray, sobel, more_blur, most_blur, perspective, wave, pop_art, strong_pop_art, picasso, triangle_sudoku, random_sudoku_region, cartoon, extra_perspective, sudoku, solarize, solarize_light, solarize_dark, posterize, equalize, color_jitter, comic_clean, inception_fold, hide_and_seek, random_value_fill, warhol_random_fill]   # K = length of this list
 
 # part 3 — C
 cnn:

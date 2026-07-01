@@ -781,6 +781,243 @@ def make(im, v):
         return out
 
 
+    if v == "anime":
+
+        im = im.convert("RGB")
+
+        # Smooth colors while preserving large structures
+        base = im.filter(ImageFilter.MedianFilter(size=5))
+        base = base.filter(ImageFilter.SMOOTH_MORE)
+        base = base.filter(ImageFilter.GaussianBlur(radius=0.6))
+
+        # Reduce the number of colors
+        base = ImageOps.posterize(base, bits=5)
+
+        # Boost saturation and contrast
+        base = ImageEnhance.Color(base).enhance(2.2)
+        base = ImageEnhance.Contrast(base).enhance(1.35)
+        base = ImageEnhance.Sharpness(base).enhance(1.8)
+
+        # Generate black outlines
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+
+        # Make outlines thicker
+        edges = edges.filter(ImageFilter.MaxFilter(3))
+
+        edge_arr = np.array(edges)
+        edge_mask = edge_arr > 40
+
+        edge_img = Image.fromarray(
+            np.where(edge_mask, 0, 255).astype(np.uint8)
+        ).convert("RGB")
+
+        # Combine outlines with colors
+        out = ImageChops.multiply(base, edge_img)
+
+        # Slight brightness boost
+        out = ImageEnhance.Brightness(out).enhance(1.05)
+
+        return out
+
+
+    if v == "advanced_anime":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Smooth the image while keeping major shapes
+        base = im.filter(ImageFilter.MedianFilter(size=5))
+        base = base.filter(ImageFilter.SMOOTH_MORE)
+        base = base.filter(ImageFilter.GaussianBlur(radius=0.8))
+
+        arr = np.array(base).astype(np.float32)
+
+        # Color quantization for cel-shading look
+        levels = random.choice([5, 6, 7])
+        arr = np.floor(arr / (256 / levels)) * (256 / levels)
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+        cel = Image.fromarray(arr)
+
+        # Strong anime-like saturation and contrast
+        cel = ImageEnhance.Color(cel).enhance(2.0)
+        cel = ImageEnhance.Contrast(cel).enhance(1.35)
+        cel = ImageEnhance.Brightness(cel).enhance(1.08)
+
+        # Create clean black outlines
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+        edges = edges.filter(ImageFilter.MaxFilter(3))
+
+        edge_arr = np.array(edges)
+        edge_mask = edge_arr > random.randint(35, 55)
+
+        outline = Image.fromarray(
+            np.where(edge_mask, 0, 255).astype(np.uint8)
+        ).convert("RGB")
+
+        out = ImageChops.multiply(cel, outline)
+
+        # Add soft bloom on bright areas
+        bright = ImageOps.grayscale(out)
+        bright_arr = np.array(bright)
+
+        bloom_mask = np.where(bright_arr > 185, 255, 0).astype(np.uint8)
+        bloom = Image.fromarray(bloom_mask).filter(ImageFilter.GaussianBlur(radius=6))
+        bloom_rgb = ImageOps.colorize(
+            bloom,
+            black=(0, 0, 0),
+            white=(255, 240, 220)
+        )
+
+        out = Image.blend(out, ImageChops.screen(out, bloom_rgb), 0.18)
+
+        # Add slight blue-purple shadow tone
+        shadow_overlay = Image.new("RGB", (w, h), (40, 55, 95))
+        shadow_mask = ImageOps.grayscale(out)
+        shadow_mask = ImageOps.invert(shadow_mask)
+        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=4))
+
+        out = Image.composite(
+            Image.blend(out, shadow_overlay, 0.18),
+            out,
+            shadow_mask
+        )
+
+        # Add small white eye/highlight sparkle-like points randomly
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        for _ in range(random.randint(8, 20)):
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+            r = random.randint(1, 3)
+
+            draw.ellipse(
+                [x - r, y - r, x + r, y + r],
+                fill=(255, 255, 255, random.randint(70, 140))
+            )
+
+        # Final sharpening
+        out = ImageEnhance.Sharpness(out).enhance(1.6)
+
+        return out
+
+
+
+    if v == "random_yellow_frame":
+
+        im = im.convert("RGB")
+        out = im.copy()
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        w, h = out.size
+
+        # Pick a random scale while preserving aspect ratio
+        scale = random.uniform(0.45, 0.95)
+
+        frame_w = int(w * scale)
+        frame_h = int(h * scale)
+
+        # Center the frame
+        x1 = (w - frame_w) // 2
+        y1 = (h - frame_h) // 2
+        x2 = x1 + frame_w
+        y2 = y1 + frame_h
+
+        # Random thick yellow border
+        thickness = random.randint(
+            max(4, min(w, h) // 80),
+            max(10, min(w, h) // 25)
+        )
+
+        draw.rectangle(
+            [x1, y1, x2, y2],
+            outline=(255, 220, 0, 255),
+            width=thickness
+        )
+
+        return out
+
+    if v == "random_thick_line":
+
+        im = im.convert("RGB")
+        out = im.copy()
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        w, h = out.size
+
+        # Pick a random start edge and end edge
+        start_edge = random.choice(["top", "bottom", "left", "right"])
+        end_edge = random.choice(["top", "bottom", "left", "right"])
+
+        # Get a random point on a given edge
+        def random_point_on_edge(edge):
+            if edge == "top":
+                return (random.randint(0, w), 0)
+            if edge == "bottom":
+                return (random.randint(0, w), h)
+            if edge == "left":
+                return (0, random.randint(0, h))
+            if edge == "right":
+                return (w, random.randint(0, h))
+
+        p1 = random_point_on_edge(start_edge)
+        p2 = random_point_on_edge(end_edge)
+
+        # Random thick line style
+        color = (
+            random.randint(0, 255),
+            random.randint(0, 255),
+            random.randint(0, 255),
+            random.randint(160, 255)
+        )
+
+        thickness = random.randint(
+            max(12, min(w, h) // 20),
+            max(25, min(w, h) // 8)
+        )
+
+        # Draw glow first
+        draw.line(
+            [p1, p2],
+            fill=(color[0], color[1], color[2], 70),
+            width=thickness + random.randint(10, 30)
+        )
+
+        # Draw main thick line
+        draw.line(
+            [p1, p2],
+            fill=color,
+            width=thickness
+        )
+
+        return out
+
+    if v == "mirror_wave":
+
+        im = im.convert("RGB")
+
+        # Önce aynala
+        im = ImageOps.mirror(im)
+
+        w, h = im.size
+        arr = np.array(im)
+
+        out = np.zeros_like(arr)
+
+        amplitude = random.randint(10, 35)
+        frequency = random.uniform(0.025, 0.075)
+
+        # Yatay dalga: her satırı sağa-sola kaydırır
+        for y in range(h):
+            shift = int(math.sin(y * frequency) * amplitude)
+            out[y] = np.roll(arr[y], shift, axis=0)
+
+        return Image.fromarray(out)
+
     if v == "random_shape_occluder":
         im = im.convert("RGB")
         out = im.copy()

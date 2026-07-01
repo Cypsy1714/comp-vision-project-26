@@ -2737,6 +2737,202 @@ def make(im, v):
         return out
 
 
+    if v == "golden_edges":
+
+        im = im.convert("RGB")
+
+        # Detect edges
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+
+        # Keep only strong edges
+        edge_arr = np.array(edges)
+        mask = (edge_arr > 95).astype(np.uint8) * 255
+
+        # Thicken the edges
+        mask = Image.fromarray(mask)
+        mask = mask.filter(ImageFilter.MaxFilter(3))
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=0.35))
+
+        # Create golden edge layer
+        gold = Image.new("RGB", im.size, (150, 118, 45))
+
+        # Composite gold only on edge mask
+        out = Image.composite(gold, im, mask)
+
+        return out
+
+
+    if v == "outer_edges_random_value_fill":
+
+        im = im.convert("RGB")
+
+        # Detect stronger, cleaner edges
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+
+        edge_arr = np.array(edges)
+
+        # Higher threshold keeps fewer inner details
+        mask = (edge_arr > 95).astype(np.uint8) * 255
+
+        mask = Image.fromarray(mask)
+
+        # Keep edges thin
+        mask = mask.filter(ImageFilter.MaxFilter(3))
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=0.35))
+
+        # Create random RGB fill
+        random_fill_arr = np.random.randint(
+            0,
+            256,
+            (im.size[1], im.size[0], 3),
+            dtype=np.uint8
+        )
+
+        random_fill = Image.fromarray(random_fill_arr, "RGB")
+
+        # Replace detected edge areas with random values
+        out = Image.composite(random_fill, im, mask)
+
+        return out
+    
+    if v == "outer_edges_random_value_fill_wave_zoom":
+
+        im = im.convert("RGB")
+
+        # Random zoom
+        zoom = random.uniform(1.05, 1.35)
+
+        w, h = im.size
+        zw = int(w * zoom)
+        zh = int(h * zoom)
+
+        enlarged = im.resize((zw, zh), Image.Resampling.BICUBIC)
+
+        left = (zw - w) // 2
+        top = (zh - h) // 2
+
+        im = enlarged.crop((left, top, left + w, top + h))
+
+        # Detect stronger, cleaner edges
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+
+        edge_arr = np.array(edges)
+
+        # Higher threshold keeps fewer inner details
+        mask = (edge_arr > 95).astype(np.uint8) * 255
+
+        mask = Image.fromarray(mask)
+        mask = mask.filter(ImageFilter.MaxFilter(3))
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=0.35))
+
+        # Create random RGB fill
+        random_fill = np.random.randint(
+            0,
+            256,
+            (h, w, 3),
+            dtype=np.uint8
+        )
+
+        random_fill = Image.fromarray(random_fill)
+
+        # Replace edge areas with random values
+        out = Image.composite(random_fill, im, mask)
+
+        # Apply gentle wave distortion
+        arr = np.array(out)
+        warped = np.zeros_like(arr)
+
+        amplitude = random.uniform(4, 10)
+        frequency = 2 * math.pi * random.uniform(2.5, 4.5) / h
+
+        for y in range(h):
+            shift = int(math.sin(y * frequency) * amplitude)
+            warped[y] = np.roll(arr[y], shift, axis=0)
+
+        return Image.fromarray(warped)
+
+
+    if v == "smiley_overlay":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = im.convert("RGBA")
+
+        # Create transparent layer for smiley faces
+        layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer, "RGBA")
+
+        # Draw many simple smiley symbols
+        count = random.randint(60, 160)
+
+        for _ in range(count):
+
+            size = random.randint(
+                max(18, min(w, h) // 35),
+                max(35, min(w, h) // 9)
+            )
+
+            x = random.randint(-size, w)
+            y = random.randint(-size, h)
+
+            alpha = random.randint(45, 135)
+
+            color = random.choice([
+                (255, 255, 255, alpha),
+                (255, 230, 80, alpha),
+                (0, 0, 0, alpha),
+                (255, 40, 40, alpha)
+            ])
+
+            eye_r = max(2, size // 10)
+
+            # Eye positions
+            left_eye = (x + int(size * 0.35), y + int(size * 0.38))
+            right_eye = (x + int(size * 0.65), y + int(size * 0.38))
+
+            draw.ellipse(
+                [left_eye[0] - eye_r, left_eye[1] - eye_r,
+                 left_eye[0] + eye_r, left_eye[1] + eye_r],
+                fill=color
+            )
+
+            draw.ellipse(
+                [right_eye[0] - eye_r, right_eye[1] - eye_r,
+                 right_eye[0] + eye_r, right_eye[1] + eye_r],
+                fill=color
+            )
+
+            # Curved smile mouth
+            mouth_box = [
+                x + int(size * 0.25),
+                y + int(size * 0.42),
+                x + int(size * 0.75),
+                y + int(size * 0.85)
+            ]
+
+            draw.arc(
+                mouth_box,
+                start=15,
+                end=165,
+                fill=color,
+                width=max(2, size // 14)
+            )
+
+        # Slight blur so symbols feel embedded into the image
+        layer = layer.filter(ImageFilter.GaussianBlur(radius=0.4))
+
+        out = Image.alpha_composite(out, layer)
+
+        return out.convert("RGB")
+
+
 
     if v == "circular_ripple":
 

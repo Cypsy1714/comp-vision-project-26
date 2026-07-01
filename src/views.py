@@ -3007,6 +3007,161 @@ def make(im, v):
         return out
 
 
+    if v == "shape_cutout_blur_background":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Pick a random shape type
+        shape = random.choice(["rectangle", "triangle", "circle"])
+
+        # Pick random source area size
+        src_w = random.randint(max(30, w // 5), max(60, w // 2))
+        src_h = random.randint(max(30, h // 5), max(60, h // 2))
+
+        sx = random.randint(0, max(0, w - src_w))
+        sy = random.randint(0, max(0, h - src_h))
+
+        source = im.crop((sx, sy, sx + src_w, sy + src_h))
+
+        # Create mask for selected shape
+        mask = Image.new("L", (src_w, src_h), 0)
+        draw = ImageDraw.Draw(mask)
+
+        if shape == "rectangle":
+            draw.rectangle([0, 0, src_w, src_h], fill=255)
+
+        elif shape == "circle":
+            draw.ellipse([0, 0, src_w, src_h], fill=255)
+
+        elif shape == "triangle":
+            points = [
+                (src_w // 2, 0),
+                (0, src_h),
+                (src_w, src_h)
+            ]
+            draw.polygon(points, fill=255)
+
+        # Create a large blurry background from the selected piece
+        bg = source.resize((w, h), Image.Resampling.BICUBIC)
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=random.randint(18, 40)))
+
+        bg = ImageEnhance.Brightness(bg).enhance(0.9)
+        bg = ImageEnhance.Contrast(bg).enhance(1.15)
+
+        out = bg.convert("RGBA")
+
+        # Shrink selected piece
+        scale = random.uniform(0.35, 0.65)
+        small_w = max(10, int(src_w * scale))
+        small_h = max(10, int(src_h * scale))
+
+        small_piece = source.resize((small_w, small_h), Image.Resampling.BICUBIC)
+        small_mask = mask.resize((small_w, small_h), Image.Resampling.BICUBIC)
+
+        # Pick random destination for the small cutout
+        dx = random.randint(0, max(0, w - small_w))
+        dy = random.randint(0, max(0, h - small_h))
+
+        # Add slight shadow behind the cutout
+        shadow = Image.new("RGBA", (small_w, small_h), (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+
+        shadow_draw.bitmap((0, 0), small_mask, fill=(0, 0, 0, 120))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=6))
+
+        out.alpha_composite(shadow, (dx + 6, dy + 6))
+
+        # Paste the small shaped piece
+        small_rgba = small_piece.convert("RGBA")
+        small_rgba.putalpha(small_mask)
+
+        out.alpha_composite(small_rgba, (dx, dy))
+
+        return out.convert("RGB")
+
+    if v == "cutout_orange_noir_background":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Pick the main cutout area
+        cut_w = random.randint(max(30, w // 5), max(60, w // 2))
+        cut_h = random.randint(max(30, h // 5), max(60, h // 2))
+
+        cx = random.randint(0, max(0, w - cut_w))
+        cy = random.randint(0, max(0, h - cut_h))
+
+        cutout = im.crop((cx, cy, cx + cut_w, cy + cut_h))
+
+        # Pick a second area that does not overlap too much with the cutout
+        for _ in range(50):
+            bg_w = random.randint(max(30, w // 5), max(60, w // 2))
+            bg_h = random.randint(max(30, h // 5), max(60, h // 2))
+
+            bx = random.randint(0, max(0, w - bg_w))
+            by = random.randint(0, max(0, h - bg_h))
+
+            overlap_x = max(0, min(cx + cut_w, bx + bg_w) - max(cx, bx))
+            overlap_y = max(0, min(cy + cut_h, by + bg_h) - max(cy, by))
+            overlap_area = overlap_x * overlap_y
+
+            cut_area = cut_w * cut_h
+            bg_area = bg_w * bg_h
+
+            if overlap_area < min(cut_area, bg_area) * 0.25:
+                break
+
+        bg_piece = im.crop((bx, by, bx + bg_w, by + bg_h))
+
+        # Enlarge second selected piece to full image size
+        bg = bg_piece.resize((w, h), Image.Resampling.BICUBIC)
+
+        # Apply orange noir jazz color grading to background
+        gray = ImageOps.grayscale(bg)
+        gray = ImageOps.autocontrast(gray)
+        gray = ImageEnhance.Contrast(gray).enhance(1.75)
+        gray = ImageEnhance.Brightness(gray).enhance(0.82)
+
+        orange_noir = ImageOps.colorize(
+            gray,
+            black=(8, 5, 4),
+            mid=(92, 42, 18),
+            white=(245, 120, 22)
+        )
+
+        glow = orange_noir.filter(ImageFilter.GaussianBlur(radius=8))
+        orange = Image.new("RGB", (w, h), (255, 105, 12))
+        glow = Image.blend(glow, orange, 0.22)
+        orange_noir = Image.blend(orange_noir, glow, 0.18)
+
+        # Add slight blur to make the background feel enlarged and atmospheric
+        orange_noir = orange_noir.filter(ImageFilter.GaussianBlur(radius=random.uniform(1.5, 4.5)))
+
+        out = orange_noir.convert("RGBA")
+
+        # Shrink the original cutout
+        scale = random.uniform(0.35, 0.65)
+        small_w = max(10, int(cut_w * scale))
+        small_h = max(10, int(cut_h * scale))
+
+        small_cutout = cutout.resize((small_w, small_h), Image.Resampling.BICUBIC)
+
+        # Randomly place the small cutout
+        dx = random.randint(0, max(0, w - small_w))
+        dy = random.randint(0, max(0, h - small_h))
+
+        # Add soft shadow
+        shadow = Image.new("RGBA", (small_w, small_h), (0, 0, 0, 120))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=8))
+        out.alpha_composite(shadow, (dx + 7, dy + 7))
+
+        out.alpha_composite(small_cutout.convert("RGBA"), (dx, dy))
+
+        return out.convert("RGB")
+
+
+
     if v == "transparent_checker_grid_pieces":
 
         im = im.convert("RGB")

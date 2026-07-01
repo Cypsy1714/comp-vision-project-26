@@ -1983,6 +1983,165 @@ def make(im, v):
 
         return out
 
+
+
+    if v == "horizontal_stretch":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        arr = np.array(im)
+        out = np.zeros_like(arr)
+
+        # Stretch strength
+        strength = random.uniform(0.8, 1.5)
+
+        center = w / 2
+
+        # Stretch horizontally from the center
+        for x_out in range(w):
+
+            t = (x_out - center) / center
+
+            # Nonlinear stretching
+            x_in = center + t * center / (1 + strength * (1 - abs(t)))
+
+            x_in = np.clip(x_in, 0, w - 1)
+
+            x0 = int(np.floor(x_in))
+            x1 = min(x0 + 1, w - 1)
+
+            alpha = x_in - x0
+
+            out[:, x_out] = (
+                (1 - alpha) * arr[:, x0] +
+                alpha * arr[:, x1]
+            )
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+
+        return Image.fromarray(out)
+
+    if v == "snow":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = im.copy()
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        # Slightly brighten and cool the image
+        out = ImageEnhance.Brightness(out).enhance(1.08)
+        out = ImageEnhance.Color(out).enhance(0.82)
+
+        # Add soft blue-white overlay
+        cold = Image.new("RGB", (w, h), (210, 230, 255))
+        out = Image.blend(out, cold, 0.14)
+
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        # Draw snowflakes with random sizes and opacity
+        for _ in range(random.randint(400, 900)):
+
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+
+            r = random.choice([1, 1, 1, 2, 2, 3])
+            alpha = random.randint(90, 220)
+
+            draw.ellipse(
+                [x - r, y - r, x + r, y + r],
+                fill=(255, 255, 255, alpha)
+            )
+
+        # Add a few larger blurred snow blobs
+        snow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        snow_draw = ImageDraw.Draw(snow_layer, "RGBA")
+
+        for _ in range(random.randint(40, 90)):
+
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+
+            r = random.randint(3, 8)
+            alpha = random.randint(45, 110)
+
+            snow_draw.ellipse(
+                [x - r, y - r, x + r, y + r],
+                fill=(255, 255, 255, alpha)
+            )
+
+        snow_layer = snow_layer.filter(ImageFilter.GaussianBlur(radius=1.2))
+        out = Image.alpha_composite(out.convert("RGBA"), snow_layer)
+
+        return out.convert("RGB")
+
+
+    if v == "rain_streaks":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = im.copy()
+
+        # Darken and desaturate the image for rainy atmosphere
+        out = ImageEnhance.Brightness(out).enhance(0.78)
+        out = ImageEnhance.Color(out).enhance(0.65)
+        out = ImageEnhance.Contrast(out).enhance(1.12)
+
+        # Add a subtle cold blue overlay
+        cold = Image.new("RGB", (w, h), (70, 95, 130))
+        out = Image.blend(out, cold, 0.18)
+
+        rain_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(rain_layer, "RGBA")
+
+        # Draw diagonal rain streaks
+        angle = random.uniform(-0.45, -0.25)
+        length = random.randint(18, 42)
+
+        for _ in range(random.randint(500, 1100)):
+
+            x = random.randint(-w // 5, w + w // 5)
+            y = random.randint(-h // 5, h + h // 5)
+
+            dx = int(math.cos(angle) * length)
+            dy = int(math.sin(angle) * length)
+
+            alpha = random.randint(55, 140)
+            width = random.choice([1, 1, 1, 2])
+
+            draw.line(
+                [(x, y), (x + dx, y + dy)],
+                fill=(210, 230, 255, alpha),
+                width=width
+            )
+
+        # Slight blur makes rain look more motion-like
+        rain_layer = rain_layer.filter(ImageFilter.GaussianBlur(radius=0.45))
+
+        out = Image.alpha_composite(out.convert("RGBA"), rain_layer)
+
+        return out.convert("RGB")
+
+
+    if v == "color_quantization":
+
+        im = im.convert("RGB")
+        arr = np.array(im)
+
+        # Reduce color levels per channel
+        levels = random.choice([3, 4, 5, 6, 8])
+
+        step = 256 // levels
+        quantized = (arr // step) * step
+
+        quantized = np.clip(quantized, 0, 255).astype(np.uint8)
+
+        out = Image.fromarray(quantized)
+
+        return out
+
     if v == "elastic_transform":
 
         im = im.convert("RGB")

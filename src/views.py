@@ -1309,6 +1309,518 @@ def make(im, v):
         return random_value_fill(im)
     
 
+
+    if v == "center_shrink_fill_fragments":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Shrink the original image while preserving aspect ratio
+        scale = random.uniform(0.45, 0.75)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        small = im.resize((new_w, new_h), Image.Resampling.BICUBIC)
+
+        # Create empty canvas
+        out = Image.new("RGB", (w, h))
+
+        # Fill the whole background with random fragments from the image
+        tile_size = random.randint(40, 120)
+
+        for y in range(0, h, tile_size):
+            for x in range(0, w, tile_size):
+
+                tw = min(tile_size, w - x)
+                th = min(tile_size, h - y)
+
+                sx = random.randint(0, max(0, w - tw))
+                sy = random.randint(0, max(0, h - th))
+
+                fragment = im.crop((sx, sy, sx + tw, sy + th))
+
+                # Randomly flip some fragments
+                if random.random() < 0.5:
+                    fragment = ImageOps.mirror(fragment)
+
+                if random.random() < 0.5:
+                    fragment = ImageOps.flip(fragment)
+
+                out.paste(fragment, (x, y))
+
+        # Paste the shrunken original image in the center
+        x0 = (w - new_w) // 2
+        y0 = (h - new_h) // 2
+
+        out.paste(small, (x0, y0))
+
+        return out
+
+
+    if v == "center_shrink_bauhaus_fill":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Shrink the original image while preserving aspect ratio
+        scale = random.uniform(0.45, 0.72)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        small = im.resize((new_w, new_h), Image.Resampling.BICUBIC)
+
+        # Create Bauhaus-style background
+        out = Image.new("RGB", (w, h), (235, 226, 205))
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        bauhaus_colors = [
+            (220, 40, 35, 210),     # red
+            (245, 200, 35, 210),    # yellow
+            (25, 80, 180, 210),     # blue
+            (20, 20, 20, 230),      # black
+            (245, 245, 235, 190)    # cream
+        ]
+
+        # Draw random Bauhaus geometric shapes
+        for _ in range(random.randint(18, 36)):
+
+            shape = random.choice(["circle", "rect", "line", "triangle"])
+
+            x = random.randint(-w // 8, w)
+            y = random.randint(-h // 8, h)
+
+            size = random.randint(
+                max(20, min(w, h) // 12),
+                max(50, min(w, h) // 4)
+            )
+
+            color = random.choice(bauhaus_colors)
+
+            if shape == "circle":
+                draw.ellipse(
+                    [x - size, y - size, x + size, y + size],
+                    fill=color,
+                    outline=(20, 20, 20, 180),
+                    width=random.randint(2, 5)
+                )
+
+            elif shape == "rect":
+                draw.rectangle(
+                    [x, y, x + size, y + size],
+                    fill=color,
+                    outline=(20, 20, 20, 180),
+                    width=random.randint(2, 5)
+                )
+
+            elif shape == "line":
+                x2 = x + random.randint(-size * 2, size * 2)
+                y2 = y + random.randint(-size * 2, size * 2)
+
+                draw.line(
+                    [(x, y), (x2, y2)],
+                    fill=color,
+                    width=random.randint(8, 22)
+                )
+
+            elif shape == "triangle":
+                points = [
+                    (x, y - size),
+                    (x - size, y + size),
+                    (x + size, y + size)
+                ]
+
+                draw.polygon(
+                    points,
+                    fill=color,
+                    outline=(20, 20, 20, 180)
+                )
+
+        # Add subtle Bauhaus grid lines
+        grid = random.randint(55, 110)
+
+        for gx in range(0, w, grid):
+            draw.line(
+                [(gx, 0), (gx, h)],
+                fill=(20, 20, 20, 40),
+                width=1
+            )
+
+        for gy in range(0, h, grid):
+            draw.line(
+                [(0, gy), (w, gy)],
+                fill=(20, 20, 20, 40),
+                width=1
+            )
+
+        # Paste the shrunken original image in the center
+        x0 = (w - new_w) // 2
+        y0 = (h - new_h) // 2
+
+        # Add black frame behind the centered image
+        frame = random.randint(8, 22)
+
+        draw.rectangle(
+            [x0 - frame, y0 - frame, x0 + new_w + frame, y0 + new_h + frame],
+            fill=(20, 20, 20, 255)
+        )
+
+        out.paste(small, (x0, y0))
+
+        return out
+
+
+    if v == "center_bauhaus_fragments_fill":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Create a Bauhaus-style version of the original image
+        bauhaus = ImageOps.posterize(im, bits=3)
+        bauhaus = ImageEnhance.Color(bauhaus).enhance(0.65)
+        bauhaus = ImageEnhance.Contrast(bauhaus).enhance(1.25)
+
+        cream = Image.new("RGB", (w, h), (235, 226, 205))
+        bauhaus = Image.blend(bauhaus, cream, 0.25)
+
+        draw_b = ImageDraw.Draw(bauhaus, "RGBA")
+
+        bauhaus_colors = [
+            (220, 40, 35, 145),
+            (245, 200, 35, 145),
+            (25, 80, 180, 145),
+            (20, 20, 20, 170),
+            (245, 245, 235, 120)
+        ]
+
+        for _ in range(random.randint(8, 16)):
+
+            shape = random.choice(["circle", "rect", "line", "triangle"])
+            x = random.randint(0, w)
+            y = random.randint(0, h)
+            size = random.randint(min(w, h) // 10, min(w, h) // 3)
+            color = random.choice(bauhaus_colors)
+
+            if shape == "circle":
+                draw_b.ellipse(
+                    [x - size, y - size, x + size, y + size],
+                    fill=color,
+                    outline=(20, 20, 20, 170),
+                    width=random.randint(2, 5)
+                )
+
+            elif shape == "rect":
+                draw_b.rectangle(
+                    [x, y, x + size, y + size],
+                    fill=color,
+                    outline=(20, 20, 20, 170),
+                    width=random.randint(2, 5)
+                )
+
+            elif shape == "line":
+                x2 = x + random.randint(-size, size)
+                y2 = y + random.randint(-size, size)
+
+                draw_b.line(
+                    [(x, y), (x2, y2)],
+                    fill=(20, 20, 20, 190),
+                    width=random.randint(5, 12)
+                )
+
+            elif shape == "triangle":
+                points = [
+                    (x, y - size),
+                    (x - size, y + size),
+                    (x + size, y + size)
+                ]
+
+                draw_b.polygon(
+                    points,
+                    fill=color,
+                    outline=(20, 20, 20, 170)
+                )
+
+        # Shrink the Bauhaus version while preserving aspect ratio
+        scale = random.uniform(0.45, 0.72)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        small_bauhaus = bauhaus.resize((new_w, new_h), Image.Resampling.BICUBIC)
+
+        # Fill the background with random fragments from the original image
+        out = Image.new("RGB", (w, h))
+        tile_size = random.randint(35, 110)
+
+        for y in range(0, h, tile_size):
+            for x in range(0, w, tile_size):
+
+                tw = min(tile_size, w - x)
+                th = min(tile_size, h - y)
+
+                sx = random.randint(0, max(0, w - tw))
+                sy = random.randint(0, max(0, h - th))
+
+                fragment = im.crop((sx, sy, sx + tw, sy + th))
+
+                # Randomly rotate or mirror some fragments
+                if random.random() < 0.5:
+                    fragment = ImageOps.mirror(fragment)
+
+                if random.random() < 0.5:
+                    fragment = ImageOps.flip(fragment)
+
+                out.paste(fragment, (x, y))
+
+        # Paste the shrunken Bauhaus image in the center
+        x0 = (w - new_w) // 2
+        y0 = (h - new_h) // 2
+
+        out.paste(small_bauhaus, (x0, y0))
+
+        return out
+    
+
+    if v == "split_overlay_gradient_bg":
+
+        im = im.convert("RGBA")
+        w, h = im.size
+
+        # Create a colorful gradient background
+        c1 = np.array([
+    random.randint(0, 255),
+    random.randint(0, 255),
+    random.randint(0, 255)
+], dtype=np.float32)
+
+        c2 = np.array([
+            random.randint(0, 255),
+            random.randint(0, 255),
+            random.randint(0, 255)
+        ], dtype=np.float32)
+
+        c3 = np.array([
+            random.randint(0, 255),
+            random.randint(0, 255),
+            random.randint(0, 255)
+        ], dtype=np.float32)
+
+        y = np.linspace(0, 1, h)[:, None, None]
+        x = np.linspace(0, 1, w)[None, :, None]
+
+        grad = (
+            c1 * (1 - x) * (1 - y) +
+            c2 * x * (1 - y) +
+            c3 * y
+        )
+
+        grad = np.clip(grad, 0, 255).astype(np.uint8)
+        bg = Image.fromarray(grad, "RGB").convert("RGBA")
+
+        # Decide split direction
+        if random.choice([True, False]):
+
+            # Split image into left and right halves
+            left = im.crop((0, 0, w // 2, h))
+            right = im.crop((w // 2, 0, w, h))
+
+            # Resize halves to full canvas height, keep their original half width
+            left.putalpha(155)
+            right.putalpha(155)
+
+            # Place both halves on top of each other in the center
+            x0 = (w - w // 2) // 2
+            bg.alpha_composite(left, (x0, 0))
+            bg.alpha_composite(right, (x0, 0))
+
+        else:
+
+            # Split image into top and bottom halves
+            top = im.crop((0, 0, w, h // 2))
+            bottom = im.crop((0, h // 2, w, h))
+
+            top.putalpha(155)
+            bottom.putalpha(155)
+
+            # Place both halves on top of each other in the center
+            y0 = (h - h // 2) // 2
+            bg.alpha_composite(top, (0, y0))
+            bg.alpha_composite(bottom, (0, y0))
+
+        return bg.convert("RGB")
+
+
+
+    if v == "wrap_roll":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = Image.new("RGB", (w, h))
+
+        # Fill the background with random image fragments
+        tile = random.randint(40, 100)
+
+        for y in range(0, h, tile):
+            for x in range(0, w, tile):
+
+                tw = min(tile, w - x)
+                th = min(tile, h - y)
+
+                sx = random.randint(0, max(0, w - tw))
+                sy = random.randint(0, max(0, h - th))
+
+                fragment = im.crop((sx, sy, sx + tw, sy + th))
+
+                if random.random() < 0.5:
+                    fragment = ImageOps.mirror(fragment)
+
+                if random.random() < 0.5:
+                    fragment = fragment.rotate(
+                        random.choice([90, 180, 270]),
+                        expand=False
+                    )
+
+                out.paste(fragment, (x, y))
+
+        # Roll the image from one side like a wrap
+        direction = random.choice(["left", "right", "top", "bottom"])
+        roll_ratio = random.uniform(0.35, 0.7)
+
+        if direction in ["left", "right"]:
+
+            strip_w = int(w * roll_ratio)
+
+            if direction == "left":
+                strip = im.crop((0, 0, strip_w, h))
+                x0 = 0
+            else:
+                strip = im.crop((w - strip_w, 0, w, h))
+                x0 = w - strip_w
+
+            draw = ImageDraw.Draw(out, "RGBA")
+
+            # Compress the strip progressively to imitate rolling
+            steps = 28
+
+            for i in range(steps):
+
+                t = i / steps
+
+                current_w = max(2, int(strip_w * (1 - t) ** 1.6))
+
+                layer = strip.resize(
+                    (current_w, h),
+                    Image.Resampling.BICUBIC
+                )
+
+                if direction == "left":
+                    xpos = x0 + i * strip_w // steps
+                else:
+                    xpos = x0 + strip_w - current_w - i * strip_w // steps
+
+                out.paste(layer, (xpos, 0))
+
+                # Draw a shadow to enhance the roll illusion
+                draw.line(
+                    [(xpos, 0), (xpos, h)],
+                    fill=(0, 0, 0, 25),
+                    width=3
+                )
+
+        else:
+
+            strip_h = int(h * roll_ratio)
+
+            if direction == "top":
+                strip = im.crop((0, 0, w, strip_h))
+                y0 = 0
+            else:
+                strip = im.crop((0, h - strip_h, w, h))
+                y0 = h - strip_h
+
+            draw = ImageDraw.Draw(out, "RGBA")
+
+            steps = 28
+
+            for i in range(steps):
+
+                t = i / steps
+
+                current_h = max(2, int(strip_h * (1 - t) ** 1.6))
+
+                layer = strip.resize(
+                    (w, current_h),
+                    Image.Resampling.BICUBIC
+                )
+
+                if direction == "top":
+                    ypos = y0 + i * strip_h // steps
+                else:
+                    ypos = y0 + strip_h - current_h - i * strip_h // steps
+
+                out.paste(layer, (0, ypos))
+
+                draw.line(
+                    [(0, ypos), (w, ypos)],
+                    fill=(0, 0, 0, 25),
+                    width=3
+                )
+
+        return out
+
+    if v == "elastic_transform":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        arr = np.array(im)
+
+        # Create random displacement fields
+        alpha = random.uniform(25, 60)
+        sigma = random.uniform(6, 12)
+
+        dx = np.random.uniform(-1, 1, (h, w))
+        dy = np.random.uniform(-1, 1, (h, w))
+
+        dx_img = Image.fromarray(((dx + 1) * 127.5).astype(np.uint8))
+        dy_img = Image.fromarray(((dy + 1) * 127.5).astype(np.uint8))
+
+        # Smooth displacement fields
+        dx_img = dx_img.filter(ImageFilter.GaussianBlur(radius=sigma))
+        dy_img = dy_img.filter(ImageFilter.GaussianBlur(radius=sigma))
+
+        dx = (np.array(dx_img).astype(np.float32) / 127.5 - 1) * alpha
+        dy = (np.array(dy_img).astype(np.float32) / 127.5 - 1) * alpha
+
+        # Create coordinate grid
+        x, y = np.meshgrid(np.arange(w), np.arange(h))
+
+        map_x = np.clip(x + dx, 0, w - 1).astype(np.float32)
+        map_y = np.clip(y + dy, 0, h - 1).astype(np.float32)
+
+        # Bilinear interpolation
+        x0 = np.floor(map_x).astype(np.int32)
+        x1 = np.clip(x0 + 1, 0, w - 1)
+        y0 = np.floor(map_y).astype(np.int32)
+        y1 = np.clip(y0 + 1, 0, h - 1)
+
+        wa = (x1 - map_x) * (y1 - map_y)
+        wb = (x1 - map_x) * (map_y - y0)
+        wc = (map_x - x0) * (y1 - map_y)
+        wd = (map_x - x0) * (map_y - y0)
+
+        out = (
+            wa[..., None] * arr[y0, x0] +
+            wb[..., None] * arr[y1, x0] +
+            wc[..., None] * arr[y0, x1] +
+            wd[..., None] * arr[y1, x1]
+        )
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+
+        return Image.fromarray(out)
+
+
+
     if v == "drunk":
 
         im = im.convert("RGB")

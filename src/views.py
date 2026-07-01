@@ -1309,6 +1309,139 @@ def make(im, v):
         return random_value_fill(im)
     
 
+    if v == "drunk":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Create a soft astigmatism-like blur
+        blur_x = im.filter(ImageFilter.GaussianBlur(radius=2.2))
+        blur_y = im.resize((w, max(1, int(h * 0.96))), Image.Resampling.BICUBIC)
+        blur_y = blur_y.resize((w, h), Image.Resampling.BICUBIC)
+        blur_y = blur_y.filter(ImageFilter.GaussianBlur(radius=1.4))
+
+        out = Image.blend(blur_x, blur_y, 0.45)
+
+        # Create a second ghost image slightly shifted and transparent
+        ghost = im.copy()
+        ghost = ImageEnhance.Contrast(ghost).enhance(0.85)
+        ghost = ImageEnhance.Brightness(ghost).enhance(1.05)
+
+        shift_x = random.randint(-18, 18)
+        shift_y = random.randint(-10, 10)
+
+        ghost_layer = Image.new("RGB", (w, h), (0, 0, 0))
+        ghost_layer.paste(ghost, (shift_x, shift_y))
+
+        out = Image.blend(out, ghost_layer, 0.28)
+
+        # Add slight color-channel separation
+        arr = np.array(out)
+
+        r = np.roll(arr[:, :, 0], random.randint(3, 8), axis=1)
+        g = arr[:, :, 1]
+        b = np.roll(arr[:, :, 2], random.randint(-8, -3), axis=1)
+
+        arr = np.stack([r, g, b], axis=2)
+        out = Image.fromarray(arr.astype(np.uint8))
+
+        # Add mild wobble distortion
+        arr = np.array(out)
+        warped = np.zeros_like(arr)
+
+        amplitude = random.randint(3, 8)
+        frequency = random.uniform(0.025, 0.055)
+
+        for y in range(h):
+            shift = int(math.sin(y * frequency) * amplitude)
+            warped[y] = np.roll(arr[y], shift, axis=0)
+
+        out = Image.fromarray(warped)
+
+        # Final softening
+        out = out.filter(ImageFilter.GaussianBlur(radius=0.6))
+
+        return out
+
+
+    if v == "blackout":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Create a black canvas
+        black = Image.new("RGB", (w, h), (0, 0, 0))
+
+        # Create a grayscale mask
+        mask = Image.new("L", (w, h), 0)
+        draw = ImageDraw.Draw(mask)
+
+        # Randomize eye opening size
+        eye_w = int(w * random.uniform(0.22, 0.32))
+        eye_h = int(h * random.uniform(0.22, 0.30))
+
+        eye_y = int(h * random.uniform(0.48, 0.58))
+
+        eye_distance = int(w * random.uniform(0.12, 0.18))
+
+        left_x = w // 2 - eye_distance - eye_w // 2
+        right_x = w // 2 + eye_distance - eye_w // 2
+
+        # Draw the two eye openings
+        draw.ellipse(
+            (
+                left_x,
+                eye_y - eye_h // 2,
+                left_x + eye_w,
+                eye_y + eye_h // 2,
+            ),
+            fill=255,
+        )
+
+        draw.ellipse(
+            (
+                right_x,
+                eye_y - eye_h // 2,
+                right_x + eye_w,
+                eye_y + eye_h // 2,
+            ),
+            fill=255,
+        )
+
+        # Slightly connect the two eyes
+        bridge_h = int(eye_h * 0.25)
+        draw.rectangle(
+            (
+                left_x + eye_w - eye_w // 8,
+                eye_y - bridge_h // 2,
+                right_x + eye_w // 8,
+                eye_y + bridge_h // 2,
+            ),
+            fill=180,
+        )
+
+        # Heavy feathering for blackout effect
+        blur_radius = random.randint(35, 70)
+        mask = mask.filter(ImageFilter.GaussianBlur(blur_radius))
+
+        # Composite original image with black background
+        out = Image.composite(im, black, mask)
+
+        # Slight blur to imitate fading vision
+        out = out.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.5, 1.5)))
+
+        # Mild chromatic aberration
+        arr = np.array(out)
+
+        r = np.roll(arr[:, :, 0], 2, axis=1)
+        g = arr[:, :, 1]
+        b = np.roll(arr[:, :, 2], -2, axis=1)
+
+        out = Image.fromarray(np.stack([r, g, b], axis=2))
+
+        return out
+
+
     if v == "color_jitter":
         im = im.convert("RGB")
 

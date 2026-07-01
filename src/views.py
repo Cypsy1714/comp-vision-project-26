@@ -302,9 +302,346 @@ def make(im, v):
 
 
 
+    if v == "affine_translate":
+        im = im.convert("RGB")
+        w, h = im.size
+
+        shift_x = random.randint(-w // 6, w // 6)
+        shift_y = random.randint(-h // 7, h // 7)
+
+        out = im.transform(
+            (w, h),
+            Image.AFFINE,
+            (1, 0, shift_x, 0, 1, shift_y),
+            resample=Image.BICUBIC,
+            fillcolor=(0, 0, 0)
+        )   
+
+        return out
 
 
-    
+
+
+    if v == "opposite_colors":
+        im = im.convert("RGB")
+
+        arr = np.array(im).astype(np.uint8)
+
+        # Her kanalın tamamlayıcı (complementary) rengi
+        arr = 255 - arr
+
+        out = Image.fromarray(arr)
+
+        return out
+
+
+    if v == "complementary_colors":
+
+        im = im.convert("RGB")
+        arr = np.array(im).astype(np.float32) / 255.0
+
+        r = arr[:, :, 0]
+        g = arr[:, :, 1]
+        b = arr[:, :, 2]
+
+        maxc = np.maximum(np.maximum(r, g), b)
+        minc = np.minimum(np.minimum(r, g), b)
+        delta = maxc - minc
+
+        h = np.zeros_like(maxc)
+        s = np.zeros_like(maxc)
+        v_channel = maxc
+
+        mask = delta != 0
+
+        s[maxc != 0] = delta[maxc != 0] / maxc[maxc != 0]
+
+        idx = (maxc == r) & mask
+        h[idx] = ((g[idx] - b[idx]) / delta[idx]) % 6
+
+        idx = (maxc == g) & mask
+        h[idx] = ((b[idx] - r[idx]) / delta[idx]) + 2
+
+        idx = (maxc == b) & mask
+        h[idx] = ((r[idx] - g[idx]) / delta[idx]) + 4
+
+        h /= 6.0
+
+        # Hue'yu 180° döndür
+        h = (h + 0.5) % 1.0
+
+        i = np.floor(h * 6).astype(int)
+        f = h * 6 - i
+
+        p = v_channel * (1 - s)
+        q = v_channel * (1 - f * s)
+        t = v_channel * (1 - (1 - f) * s)
+
+        r2 = np.zeros_like(h)
+        g2 = np.zeros_like(h)
+        b2 = np.zeros_like(h)
+
+        i = i % 6
+
+        m = i == 0
+        r2[m], g2[m], b2[m] = v_channel[m], t[m], p[m]
+
+        m = i == 1
+        r2[m], g2[m], b2[m] = q[m], v_channel[m], p[m]
+
+        m = i == 2
+        r2[m], g2[m], b2[m] = p[m], v_channel[m], t[m]
+
+        m = i == 3
+        r2[m], g2[m], b2[m] = p[m], q[m], v_channel[m]
+
+        m = i == 4
+        r2[m], g2[m], b2[m] = t[m], p[m], v_channel[m]
+
+        m = i == 5
+        r2[m], g2[m], b2[m] = v_channel[m], p[m], q[m]
+
+        out = np.stack([r2, g2, b2], axis=2)
+        out = np.clip(out * 255, 0, 255).astype(np.uint8)
+
+        return Image.fromarray(out)
+
+
+    if v == "opposite_complementary_shuffle":
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # 1) Opposite colors
+        opposite = ImageOps.invert(im)
+
+        # 2) Complementary colors - HSV hue 180 derece çevirme
+        arr = np.array(im).astype(np.float32) / 255.0
+
+        r = arr[:, :, 0]
+        g = arr[:, :, 1]
+        b = arr[:, :, 2]
+
+        maxc = np.maximum(np.maximum(r, g), b)
+        minc = np.minimum(np.minimum(r, g), b)
+        delta = maxc - minc
+
+        hue = np.zeros_like(maxc)
+        sat = np.zeros_like(maxc)
+        val = maxc
+
+        mask = delta != 0
+
+        sat[maxc != 0] = delta[maxc != 0] / maxc[maxc != 0]
+
+        idx = (maxc == r) & mask
+        hue[idx] = ((g[idx] - b[idx]) / delta[idx]) % 6
+
+        idx = (maxc == g) & mask
+        hue[idx] = ((b[idx] - r[idx]) / delta[idx]) + 2
+
+        idx = (maxc == b) & mask
+        hue[idx] = ((r[idx] - g[idx]) / delta[idx]) + 4
+
+        hue /= 6.0
+        hue = (hue + 0.5) % 1.0
+
+        i = np.floor(hue * 6).astype(int) % 6
+        f = hue * 6 - np.floor(hue * 6)
+
+        p = val * (1 - sat)
+        q = val * (1 - f * sat)
+        t = val * (1 - (1 - f) * sat)
+
+        r2 = np.zeros_like(hue)
+        g2 = np.zeros_like(hue)
+        b2 = np.zeros_like(hue)
+
+        m = i == 0
+        r2[m], g2[m], b2[m] = val[m], t[m], p[m]
+
+        m = i == 1
+        r2[m], g2[m], b2[m] = q[m], val[m], p[m]
+
+        m = i == 2
+        r2[m], g2[m], b2[m] = p[m], val[m], t[m]
+
+        m = i == 3
+        r2[m], g2[m], b2[m] = p[m], q[m], val[m]
+
+        m = i == 4
+        r2[m], g2[m], b2[m] = t[m], p[m], val[m]
+
+        m = i == 5
+        r2[m], g2[m], b2[m] = val[m], p[m], q[m]
+
+        comp_arr = np.stack([r2, g2, b2], axis=2)
+        comp_arr = np.clip(comp_arr * 255, 0, 255).astype(np.uint8)
+        complementary = Image.fromarray(comp_arr)
+
+        # 3) Fotoğrafın yarısı opposite, yarısı complementary
+        mixed = Image.new("RGB", (w, h))
+
+        if random.choice([True, False]):
+            # Sol yarı opposite, sağ yarı complementary
+            mixed.paste(opposite.crop((0, 0, w // 2, h)), (0, 0))
+            mixed.paste(complementary.crop((w // 2, 0, w, h)), (w // 2, 0))
+        else:
+            # Üst yarı opposite, alt yarı complementary
+            mixed.paste(opposite.crop((0, 0, w, h // 2)), (0, 0))
+            mixed.paste(complementary.crop((0, h // 2, w, h)), (0, h // 2))
+
+        # 4) Dikey fotoğrafsa 8 yatay parça, yatay fotoğrafsa 8 dikey parça
+        pieces = []
+
+        if h > w:
+            # Dikey fotoğraf: 8 eşit yatay şerit
+            piece_h = h // 8
+
+            for i in range(8):
+                y1 = i * piece_h
+                y2 = h if i == 7 else (i + 1) * piece_h
+
+                piece = mixed.crop((0, y1, w, y2))
+                pieces.append(piece)
+
+            random.shuffle(pieces)
+
+            out = Image.new("RGB", (w, h))
+            current_y = 0
+
+            for piece in pieces:
+                out.paste(piece, (0, current_y))
+                current_y += piece.size[1]
+
+        else:
+            # Yatay fotoğraf: 8 eşit dikey şerit
+            piece_w = w // 8
+
+            for i in range(8):
+                x1 = i * piece_w
+                x2 = w if i == 7 else (i + 1) * piece_w
+
+                piece = mixed.crop((x1, 0, x2, h))
+                pieces.append(piece)
+
+            random.shuffle(pieces)
+
+            out = Image.new("RGB", (w, h))
+            current_x = 0
+
+            for piece in pieces:
+                out.paste(piece, (current_x, 0))
+                current_x += piece.size[0]
+
+        return out
+
+
+
+
+
+    if v == "sudoku_quarter_mix":
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # 4 main effects
+        gray = ImageOps.grayscale(im).convert("RGB")
+
+        sobel_gray = ImageOps.grayscale(im)
+        sobel = sobel_gray.filter(ImageFilter.FIND_EDGES)
+        sobel = ImageOps.autocontrast(sobel).convert("RGB")
+
+        scale = random.uniform(1.25, 1.75)
+        sw, sh = int(w * scale), int(h * scale)
+        scaled = im.resize((sw, sh), Image.Resampling.BICUBIC)
+        left = (sw - w) // 2
+        top = (sh - h) // 2
+        affine_scaled = scaled.crop((left, top, left + w, top + h))
+
+        orange_overlay = Image.new("RGB", (w, h), (255, 125, 20))
+        orange = Image.blend(im, orange_overlay, 0.45)
+        orange = ImageEnhance.Color(orange).enhance(1.4)
+        orange = ImageEnhance.Contrast(orange).enhance(1.1)
+
+        variants = [gray, sobel, affine_scaled, orange]
+
+        # Sudoku grid
+        grid_n = random.choice([4, 6, 8])
+        tile_w = w // grid_n
+        tile_h = h // grid_n
+
+        out = Image.new("RGB", (w, h))
+
+        # every effect 1/4
+        cells = list(range(grid_n * grid_n))
+        random.shuffle(cells)
+
+        groups = [
+            cells[0::4],
+            cells[1::4],
+            cells[2::4],
+            cells[3::4]
+        ]
+
+        cell_to_effect = {}
+
+        for effect_id, group in enumerate(groups):
+            for cell in group:
+                cell_to_effect[cell] = effect_id
+
+        for row in range(grid_n):
+            for col in range(grid_n):
+                cell_id = row * grid_n + col
+                effect_id = cell_to_effect[cell_id]
+
+                x1 = col * tile_w
+                y1 = row * tile_h
+
+                x2 = w if col == grid_n - 1 else x1 + tile_w
+                y2 = h if row == grid_n - 1 else y1 + tile_h
+
+                tile = variants[effect_id].crop((x1, y1, x2, y2))
+                out.paste(tile, (x1, y1))
+
+        # sudoku feeling
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        for x in range(0, w, tile_w):
+            draw.line([(x, 0), (x, h)], fill=(0, 0, 0, 50), width=1)
+
+        for y in range(0, h, tile_h):
+            draw.line([(0, y), (w, y)], fill=(0, 0, 0, 50), width=1)
+
+        return out
+
+
+
+    if v == "affine_scale":
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Güçlü ölçekleme
+        scale = random.uniform(0.45, 1.75)
+
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        scaled = im.resize((new_w, new_h), Image.Resampling.BICUBIC)
+
+        canvas = Image.new("RGB", (w, h), (0, 0, 0))
+
+        x = (w - new_w) // 2
+        y = (h - new_h) // 2
+
+        canvas.paste(scaled, (x, y))
+
+        # Zoom in ise ortadan crop al
+        if scale > 1:
+            left = (new_w - w) // 2
+            top = (new_h - h) // 2
+            canvas = scaled.crop((left, top, left + w, top + h))
+
+        return canvas
+
 
     if v == "random_shape_occluder":
         im = im.convert("RGB")

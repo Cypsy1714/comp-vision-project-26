@@ -1648,6 +1648,222 @@ def make(im, v):
         return bg.convert("RGB")
 
 
+    if v == "upside_down":
+
+        return im.transpose(Image.Transpose.ROTATE_180)
+
+
+    if v == "gaussian_noise":
+
+        im = im.convert("RGB")
+        arr = np.array(im).astype(np.float32)
+
+        # Generate Gaussian noise
+        mean = 0
+        sigma = random.uniform(15, 45)
+
+        noise = np.random.normal(mean, sigma, arr.shape)
+
+        # Add noise to the image
+        noisy = arr + noise
+
+        noisy = np.clip(noisy, 0, 255).astype(np.uint8)
+
+        return Image.fromarray(noisy)
+
+
+    if v == "upside_noise_wave":
+
+        im = im.convert("RGB")
+
+        # Rotate image upside down
+        im = im.transpose(Image.Transpose.ROTATE_180)
+
+        w, h = im.size
+        arr = np.array(im).astype(np.float32)
+
+        # Add strong Gaussian noise
+        sigma = 65
+        noise = np.random.normal(0, sigma, arr.shape)
+
+        arr = arr + noise
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+        # Apply fixed 5-wave horizontal distortion
+        wave_arr = np.zeros_like(arr)
+
+        amplitude = 28
+        frequency = 2 * math.pi * 5 / h
+
+        for y in range(h):
+            shift = int(math.sin(y * frequency) * amplitude)
+            wave_arr[y] = np.roll(arr[y], shift, axis=0)
+
+        return Image.fromarray(wave_arr)
+    
+
+    if v == "multiplicative_noise":
+
+        im = im.convert("RGB")
+        arr = np.array(im).astype(np.float32)
+
+        # Generate multiplicative Gaussian noise
+        sigma = random.uniform(0.15, 0.45)
+        noise = np.random.normal(0, sigma, arr.shape)
+
+        # Apply multiplicative noise
+        arr = arr * (1.0 + noise)
+
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+        return Image.fromarray(arr)
+    
+
+    if v == "neighbor_majority_20000":
+
+        im = im.convert("RGB")
+
+        # Resize image to approximately 4000 total pixels
+        w, h = im.size
+        total_pixels = 20000
+        scale = math.sqrt(total_pixels / (w * h))
+
+        small_w = max(2, int(w * scale))
+        small_h = max(2, int(h * scale))
+
+        small = im.resize((small_w, small_h), Image.Resampling.BILINEAR)
+
+        arr = np.array(small)
+
+        # Quantize colors so neighbor majority becomes meaningful
+        levels = 50
+        q = (arr // (256 // levels)) * (256 // levels)
+
+        out = q.copy()
+
+        # For every pixel, look at its 8 surrounding neighbors
+        for y in range(small_h):
+            for x in range(small_w):
+
+                neighbors = []
+
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+
+                        if dx == 0 and dy == 0:
+                            continue
+
+                        nx = x + dx
+                        ny = y + dy
+
+                        if 0 <= nx < small_w and 0 <= ny < small_h:
+                            neighbors.append(tuple(q[ny, nx]))
+
+                # Pick the most common neighboring color
+                if neighbors:
+                    most_common = max(set(neighbors), key=neighbors.count)
+                    out[y, x] = most_common
+
+        result = Image.fromarray(out.astype(np.uint8))
+
+        # Scale back to original image size
+        result = result.resize((w, h), Image.Resampling.NEAREST)
+
+        return result
+    
+
+    if v == "neighbor_majority_25000_sudoku":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Resize image to approximately 25000 total pixels
+        total_pixels = 25000
+        scale = math.sqrt(total_pixels / (w * h))
+
+        small_w = max(2, int(w * scale))
+        small_h = max(2, int(h * scale))
+
+        small = im.resize((small_w, small_h), Image.Resampling.BILINEAR)
+
+        arr = np.array(small)
+
+        # Quantize colors so majority voting works better
+        levels = 100
+        q = (arr // (256 // levels)) * (256 // levels)
+
+        out = q.copy()
+
+        # Apply 8-neighbor majority color filter
+        for y in range(small_h):
+            for x in range(small_w):
+
+                neighbors = []
+
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+
+                        if dx == 0 and dy == 0:
+                            continue
+
+                        nx = x + dx
+                        ny = y + dy
+
+                        if 0 <= nx < small_w and 0 <= ny < small_h:
+                            neighbors.append(tuple(q[ny, nx]))
+
+                if neighbors:
+                    most_common = max(set(neighbors), key=neighbors.count)
+                    out[y, x] = most_common
+
+        result = Image.fromarray(out.astype(np.uint8))
+
+        # Scale back to original image size
+        result = result.resize((w, h), Image.Resampling.NEAREST)
+
+        # Split into maximum 10 sudoku-like random pieces
+        pieces_count = random.randint(4, 10)
+
+        if h > w:
+            # Vertical image: horizontal strips
+            piece_h = h // pieces_count
+            pieces = []
+
+            for i in range(pieces_count):
+                y1 = i * piece_h
+                y2 = h if i == pieces_count - 1 else (i + 1) * piece_h
+                pieces.append(result.crop((0, y1, w, y2)))
+
+            random.shuffle(pieces)
+
+            final = Image.new("RGB", (w, h))
+            current_y = 0
+
+            for piece in pieces:
+                final.paste(piece, (0, current_y))
+                current_y += piece.size[1]
+
+        else:
+            # Horizontal image: vertical strips
+            piece_w = w // pieces_count
+            pieces = []
+
+            for i in range(pieces_count):
+                x1 = i * piece_w
+                x2 = w if i == pieces_count - 1 else (i + 1) * piece_w
+                pieces.append(result.crop((x1, 0, x2, h)))
+
+            random.shuffle(pieces)
+
+            final = Image.new("RGB", (w, h))
+            current_x = 0
+
+            for piece in pieces:
+                final.paste(piece, (current_x, 0))
+                current_x += piece.size[0]
+
+        return final
+
 
     if v == "wrap_roll":
 

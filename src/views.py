@@ -2858,6 +2858,228 @@ def make(im, v):
         return Image.fromarray(warped)
 
 
+
+    if v == "orange_noir_jazz":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Convert image to grayscale for controlled tonal mapping
+        gray = ImageOps.grayscale(im)
+
+        # Strong contrast for noir silhouettes
+        gray = ImageOps.autocontrast(gray)
+        gray = ImageEnhance.Contrast(gray).enhance(1.75)
+        gray = ImageEnhance.Brightness(gray).enhance(0.82)
+
+        # Map tones to dark brown / burnt orange / amber
+        out = ImageOps.colorize(
+            gray,
+            black=(8, 5, 4),
+            mid=(92, 42, 18),
+            white=(245, 120, 22)
+        )
+
+        # Add warm orange glow
+        glow = out.filter(ImageFilter.GaussianBlur(radius=8))
+        orange = Image.new("RGB", (w, h), (255, 105, 12))
+        glow = Image.blend(glow, orange, 0.22)
+        out = Image.blend(out, glow, 0.18)
+
+        # Add dark vignette
+        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+        cx, cy = w / 2, h / 2
+        dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+        dist = dist / dist.max()
+
+        vignette = 1 - np.clip((dist - 0.25) / 0.75, 0, 1) * 0.55
+
+        arr = np.array(out).astype(np.float32)
+        arr = arr * vignette[:, :, None]
+
+        # Add subtle film grain
+        noise = np.random.normal(0, 7, arr.shape)
+        arr = arr + noise
+
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+        out = Image.fromarray(arr)
+
+        # Final punchy noir correction
+        out = ImageEnhance.Contrast(out).enhance(1.22)
+        out = ImageEnhance.Color(out).enhance(1.15)
+
+        return out
+    
+
+    if v == "orange_noir_expansion":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Apply orange noir jazz color grading
+        gray = ImageOps.grayscale(im)
+        gray = ImageOps.autocontrast(gray)
+        gray = ImageEnhance.Contrast(gray).enhance(1.75)
+        gray = ImageEnhance.Brightness(gray).enhance(0.82)
+
+        colored = ImageOps.colorize(
+            gray,
+            black=(8, 5, 4),
+            mid=(92, 42, 18),
+            white=(245, 120, 22)
+        )
+
+        glow = colored.filter(ImageFilter.GaussianBlur(radius=8))
+        orange = Image.new("RGB", (w, h), (255, 105, 12))
+        glow = Image.blend(glow, orange, 0.22)
+        colored = Image.blend(colored, glow, 0.18)
+
+        # Pick random expansion center
+        cx = random.randint(0, w - 1)
+        cy = random.randint(0, h - 1)
+
+        arr = np.array(colored)
+        out = np.zeros_like(arr)
+
+        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+
+        dx = xx - cx
+        dy = yy - cy
+
+        dist = np.sqrt(dx * dx + dy * dy)
+        max_dist = np.sqrt(max(cx, w - cx) ** 2 + max(cy, h - cy) ** 2)
+
+        norm = dist / max_dist
+
+        # Expansion strength
+        strength = random.uniform(0.25, 0.55)
+
+        # Pull output pixels inward so the image appears to expand outward
+        factor = 1 + strength * (1 - np.exp(-norm * 2.5))
+
+        map_x = cx + dx / factor
+        map_y = cy + dy / factor
+
+        map_x = np.clip(map_x, 0, w - 1)
+        map_y = np.clip(map_y, 0, h - 1)
+
+        # Bilinear interpolation
+        x0 = np.floor(map_x).astype(np.int32)
+        x1 = np.clip(x0 + 1, 0, w - 1)
+
+        y0 = np.floor(map_y).astype(np.int32)
+        y1 = np.clip(y0 + 1, 0, h - 1)
+
+        wx = map_x - x0
+        wy = map_y - y0
+
+        warped = (
+            (1 - wx)[..., None] * (1 - wy)[..., None] * arr[y0, x0] +
+            wx[..., None] * (1 - wy)[..., None] * arr[y0, x1] +
+            (1 - wx)[..., None] * wy[..., None] * arr[y1, x0] +
+            wx[..., None] * wy[..., None] * arr[y1, x1]
+        )
+
+        warped = np.clip(warped, 0, 255).astype(np.uint8)
+        out = Image.fromarray(warped)
+
+        # Add dark vignette after expansion
+        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+        vcx, vcy = w / 2, h / 2
+        vdist = np.sqrt((xx - vcx) ** 2 + (yy - vcy) ** 2)
+        vdist = vdist / vdist.max()
+
+        vignette = 1 - np.clip((vdist - 0.25) / 0.75, 0, 1) * 0.55
+
+        out_arr = np.array(out).astype(np.float32)
+        out_arr = out_arr * vignette[:, :, None]
+
+        # Add subtle grain
+        noise = np.random.normal(0, 7, out_arr.shape)
+        out_arr = out_arr + noise
+
+        out_arr = np.clip(out_arr, 0, 255).astype(np.uint8)
+
+        out = Image.fromarray(out_arr)
+        out = ImageEnhance.Contrast(out).enhance(1.22)
+        out = ImageEnhance.Color(out).enhance(1.15)
+
+        return out
+
+
+    if v == "transparent_checker_grid_pieces":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = im.convert("RGBA")
+
+        # Create transparent checkerboard grid layer
+        grid_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(grid_layer, "RGBA")
+
+        # Random grid size
+        cells_x = random.randint(6, 12)
+        cells_y = random.randint(6, 12)
+
+        cell_w = w / cells_x
+        cell_h = h / cells_y
+
+        # Transparent checkerboard colors
+        color_a = (255, 255, 255, 55)
+        color_b = (0, 0, 0, 55)
+
+        for row in range(cells_y):
+            for col in range(cells_x):
+
+                x1 = int(col * cell_w)
+                y1 = int(row * cell_h)
+                x2 = int((col + 1) * cell_w)
+                y2 = int((row + 1) * cell_h)
+
+                if (row + col) % 2 == 0:
+                    fill = color_a
+                else:
+                    fill = color_b
+
+                draw.rectangle(
+                    [x1, y1, x2, y2],
+                    fill=fill,
+                    outline=(255, 255, 255, 45)
+                )
+
+        # Pick two different random cells
+        all_cells = [(row, col) for row in range(cells_y) for col in range(cells_x)]
+        white_cell, black_cell = random.sample(all_cells, 2)
+
+        def draw_piece(cell, color):
+            row, col = cell
+
+            x1 = int(col * cell_w)
+            y1 = int(row * cell_h)
+            x2 = int((col + 1) * cell_w)
+            y2 = int((row + 1) * cell_h)
+
+            # Circle size relative to cell
+            margin = int(min(x2 - x1, y2 - y1) * 0.18)
+
+            draw.ellipse(
+                [x1 + margin, y1 + margin, x2 - margin, y2 - margin],
+                fill=color,
+                outline=(255, 255, 255, 160),
+                width=max(2, int(min(x2 - x1, y2 - y1) * 0.04))
+            )
+
+        # Draw one white and one black circular piece in different cells
+        draw_piece(white_cell, (255, 255, 255, 210))
+        draw_piece(black_cell, (0, 0, 0, 220))
+
+        out = Image.alpha_composite(out, grid_layer)
+
+        return out.convert("RGB")
+
+
+
     if v == "smiley_overlay":
 
         im = im.convert("RGB")

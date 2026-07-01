@@ -1984,6 +1984,70 @@ def make(im, v):
         return out
 
 
+    if v == "mosaic_4_tile":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Create four smaller copies of the image
+        tile_w = w // 2
+        tile_h = h // 2
+
+        tile = im.resize((tile_w, tile_h), Image.Resampling.BICUBIC)
+
+        out = Image.new("RGB", (w, h))
+
+        # Place the same image into a 2x2 mosaic
+        out.paste(tile, (0, 0))
+        out.paste(tile, (tile_w, 0))
+        out.paste(tile, (0, tile_h))
+        out.paste(tile, (tile_w, tile_h))
+
+        return out
+
+
+    if v == "mosaic_4_random_effects":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        tile_w = w // 2
+        tile_h = h // 2
+
+        effects = [
+            "upside_down",
+            "bauhaus",
+            "opposite_colors",
+            "sobel",
+            "red_green_grid",
+            "wave",
+            "blackout",
+            "center_shrink_bauhaus_fill",
+            "horizontal_stretch"
+        ]
+
+        selected = random.sample(effects, 4)
+
+        out = Image.new("RGB", (w, h))
+
+        positions = [
+            (0, 0),
+            (tile_w, 0),
+            (0, tile_h),
+            (tile_w, tile_h)
+        ]
+
+        for i, effect in enumerate(selected):
+
+            tile = im.resize((tile_w, tile_h), Image.Resampling.BICUBIC)
+
+            # Apply a random selected effect to this tile
+            tile = make(tile, effect)
+
+            out.paste(tile, positions[i])
+
+        return out
+
 
     if v == "horizontal_stretch":
 

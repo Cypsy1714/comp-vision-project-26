@@ -614,6 +614,68 @@ def make(im, v):
         return out
 
 
+    if v == "red_green_duotone":
+
+        gray = ImageOps.grayscale(im)
+
+        out = ImageOps.colorize(
+            gray,
+            black=(180, 0, 0),      # koyular kırmızı
+            white=(0, 220, 0)       # açıklar yeşil
+        )
+
+        return out
+
+
+
+    if v == "red_green_grid":
+
+        gray = ImageOps.grayscale(im)
+
+        out = ImageOps.colorize(
+            gray,
+            black=(180, 0, 0),
+            white=(0, 220, 0)
+        )
+
+        out = ImageEnhance.Color(out).enhance(1.4)
+        out = ImageEnhance.Contrast(out).enhance(1.2)
+
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        w, h = out.size
+
+        # Rastgele grid aralığı
+        grid = random.randint(25, 80)
+
+        # Rastgele çizgi kalınlığı
+        thickness = random.randint(1, 4)
+
+        # Grid rengi
+        grid_color = random.choice([
+            (255, 255, 255, 70),
+            (0, 0, 0, 70),
+            (255, 0, 0, 80),
+            (0, 255, 0, 80)
+        ])
+
+        # Dikey çizgiler
+        for x in range(0, w, grid):
+            draw.line(
+                [(x, 0), (x, h)],
+                fill=grid_color,
+                width=thickness
+            )
+
+        # Yatay çizgiler
+        for y in range(0, h, grid):
+            draw.line(
+                [(0, y), (w, y)],
+                fill=grid_color,
+                width=thickness
+            )
+
+        return out
 
     if v == "affine_scale":
         im = im.convert("RGB")
@@ -641,6 +703,82 @@ def make(im, v):
             canvas = scaled.crop((left, top, left + w, top + h))
 
         return canvas
+
+
+    if v == "red_green_grid_mirror_red_restore":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Orijinal görüntüyü sakla
+        original = im.copy()
+
+        # Red-green duotone
+        gray = ImageOps.grayscale(im)
+
+        duotone = ImageOps.colorize(
+            gray,
+            black=(180, 0, 0),
+            white=(0, 220, 0)
+        )
+
+        duotone = ImageEnhance.Color(duotone).enhance(1.4)
+        duotone = ImageEnhance.Contrast(duotone).enhance(1.2)
+
+        out = duotone.copy()
+
+        # Rastgele grid
+        grid = random.randint(35, 80)
+
+        for y in range(0, h, grid):
+            for x in range(0, w, grid):
+
+                x2 = min(x + grid, w)
+                y2 = min(y + grid, h)
+
+                tile = duotone.crop((x, y, x2, y2))
+                tile_arr = np.array(tile).astype(np.float32)
+
+                r_mean = tile_arr[:, :, 0].mean()
+                g_mean = tile_arr[:, :, 1].mean()
+
+                # Karede kırmızı baskınsa:
+                if r_mean > g_mean:
+                    original_tile = original.crop((x, y, x2, y2))
+
+                    # Aynala
+                    original_tile = ImageOps.mirror(original_tile)
+
+                    # Normal rengine geri döndürerek yapıştır
+                    out.paste(original_tile, (x, y))
+
+        # Grid çizgilerini en son ekle
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        grid_color = random.choice([
+            (255, 255, 255, 70),
+            (0, 0, 0, 80),
+            (255, 0, 0, 90),
+            (0, 255, 0, 90)
+        ])
+
+        thickness = random.randint(1, 3)
+
+        for gx in range(0, w, grid):
+            draw.line(
+                [(gx, 0), (gx, h)],
+                fill=grid_color,
+                width=thickness
+            )
+
+        for gy in range(0, h, grid):
+            draw.line(
+                [(0, gy), (w, gy)],
+                fill=grid_color,
+                width=thickness
+            )
+
+        return out
 
 
     if v == "random_shape_occluder":

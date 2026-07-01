@@ -6,7 +6,6 @@ import numpy as np
 from PIL import Image
 import math
 
-
 def make(im, v):
     if v == "hflip":
         return ImageOps.mirror(im)
@@ -2049,6 +2048,58 @@ def make(im, v):
         return out
 
 
+    if v == "cross_hatching":
+
+        gray = ImageOps.grayscale(im)
+        w, h = gray.size
+
+        arr = np.array(gray)
+
+        out = Image.new("RGB", (w, h), (255, 255, 255))
+        draw = ImageDraw.Draw(out)
+
+        spacing = 8
+
+        # First diagonal hatch
+        for offset in range(-h, w, spacing):
+
+            for t in range(max(0, -offset), min(h, w - offset)):
+
+                x = offset + t
+                y = t
+
+                if arr[y, x] < 190:
+                    draw.point((x, y), fill="black")
+
+        # Second diagonal hatch
+        for offset in range(0, w + h, spacing):
+
+            for y in range(h):
+
+                x = offset - y
+
+                if 0 <= x < w:
+                    if arr[y, x] < 140:
+                        draw.point((x, y), fill="black")
+
+        # Third hatch for darker areas
+        for x in range(0, w, spacing):
+
+            for y in range(h):
+
+                if arr[y, x] < 90:
+                    draw.point((x, y), fill="black")
+
+        # Fourth hatch for the darkest regions
+        for y in range(0, h, spacing):
+
+            for x in range(w):
+
+                if arr[y, x] < 45:
+                    draw.point((x, y), fill="black")
+
+        return out
+
     if v == "horizontal_stretch":
 
         im = im.convert("RGB")
@@ -2389,6 +2440,540 @@ def make(im, v):
         b = np.roll(arr[:, :, 2], -2, axis=1)
 
         out = Image.fromarray(np.stack([r, g, b], axis=2))
+
+        return out
+
+
+    if v == "post_impressionist":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Boost color and contrast for a vivid painted look
+        base = ImageEnhance.Color(im).enhance(1.8)
+        base = ImageEnhance.Contrast(base).enhance(1.25)
+        base = ImageEnhance.Brightness(base).enhance(1.05)
+
+        # Posterize colors to reduce photographic smoothness
+        base = ImageOps.posterize(base, bits=5)
+
+        out = base.copy()
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        arr = np.array(base).astype(np.int16)
+
+        # Brush stroke settings
+        stroke_count = int((w * h) / 550)
+        stroke_count = max(1200, min(stroke_count, 9000))
+
+        for _ in range(stroke_count):
+
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+
+            color = arr[y, x]
+
+            # Slight color variation per stroke
+            color = (
+                int(np.clip(color[0] + random.randint(-18, 18), 0, 255)),
+                int(np.clip(color[1] + random.randint(-18, 18), 0, 255)),
+                int(np.clip(color[2] + random.randint(-18, 18), 0, 255)),
+                random.randint(40, 90)
+            )
+
+            length = random.randint(4, 10)
+            width_s = random.randint(1, 3)
+
+            # Direction changes with position for swirling painted movement
+            angle = (
+                math.sin(y * 0.035) * 1.2 +
+                math.cos(x * 0.025) * 1.2 +
+                random.uniform(-0.8, 0.8)
+            )
+
+            x2 = x + int(math.cos(angle) * length)
+            y2 = y + int(math.sin(angle) * length)
+
+            draw.line(
+                [(x, y), (x2, y2)],
+                fill=color,
+                width=width_s
+            )
+
+        # Add darker short strokes for texture
+        for _ in range(stroke_count // 3):
+
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+
+            color = arr[y, x]
+            dark = (
+                max(0, int(color[0] * 0.55)),
+                max(0, int(color[1] * 0.55)),
+                max(0, int(color[2] * 0.55)),
+                random.randint(70, 130)
+            )
+
+            length = random.randint(4, 14)
+            angle = random.uniform(0, 2 * math.pi)
+
+            x2 = x + int(math.cos(angle) * length)
+            y2 = y + int(math.sin(angle) * length)
+
+            draw.line(
+                [(x, y), (x2, y2)],
+                fill=dark,
+                width=random.randint(1, 3)
+            )
+
+        # Slight smoothing to merge strokes
+        out = out.filter(ImageFilter.GaussianBlur(radius=0.35))
+
+        # Final vivid color correction
+        out = ImageEnhance.Color(out).enhance(1.25)
+        out = ImageEnhance.Contrast(out).enhance(1.15)
+        out = ImageEnhance.Sharpness(out).enhance(1.4)
+
+        return out
+    
+
+    if v == "white_concrete_da_vinci":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Convert to grayscale to remove all original colors
+        gray = ImageOps.grayscale(im)
+
+        # Create soft sculptural base
+        base = ImageOps.autocontrast(gray)
+        base = ImageEnhance.Contrast(base).enhance(1.35)
+        base = ImageEnhance.Brightness(base).enhance(1.25)
+
+        # Map tones to white concrete / plaster colors
+        statue = ImageOps.colorize(
+            base,
+            black=(105, 105, 100),
+            white=(245, 242, 232)
+        )
+
+        # Create embossed relief effect
+        embossed = gray.filter(ImageFilter.EMBOSS)
+        embossed = ImageOps.autocontrast(embossed)
+        embossed = ImageEnhance.Contrast(embossed).enhance(1.4)
+
+        emboss_rgb = ImageOps.colorize(
+            embossed,
+            black=(80, 80, 75),
+            white=(255, 252, 240)
+        )
+
+        statue = ImageChops.multiply(statue, emboss_rgb)
+
+        # Add subtle concrete grain
+        arr = np.array(statue).astype(np.float32)
+
+        noise = np.random.normal(0, random.uniform(6, 14), arr.shape)
+        arr = arr + noise
+
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+        out = Image.fromarray(arr)
+
+        # Add carved dark edge details
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+        edges = edges.filter(ImageFilter.MaxFilter(3))
+
+        edge_arr = np.array(edges)
+        edge_mask = edge_arr > 35
+
+        outline = Image.fromarray(
+            np.where(edge_mask, 130, 255).astype(np.uint8)
+        ).convert("RGB")
+
+        out = ImageChops.multiply(out, outline)
+
+        # Add slight blur and sharpen for stone-like surface
+        out = out.filter(ImageFilter.GaussianBlur(radius=0.35))
+        out = ImageEnhance.Sharpness(out).enhance(1.6)
+
+        # Final white plaster brightness
+        out = ImageEnhance.Brightness(out).enhance(1.12)
+        out = ImageEnhance.Contrast(out).enhance(1.08)
+
+        return out
+
+    if v == "fenerbahce":
+
+        im = im.convert("RGB")
+
+        # Convert image to grayscale for tonal mapping
+        gray = ImageOps.grayscale(im)
+
+        # Inverted yellow-navy duotone:
+        # Dark areas become yellow, bright areas become navy
+        out = ImageOps.colorize(
+            gray,
+            black=(255, 220, 0),     # yellow
+            white=(0, 35, 95)        # navy
+        )
+
+        # Increase contrast and saturation for a stronger Fenerbahce palette
+        out = ImageEnhance.Contrast(out).enhance(1.25)
+        out = ImageEnhance.Color(out).enhance(1.35)
+
+        return out
+    
+
+    if v == "approx_living_fenerbahce_da_vinci_upside_down":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Create approximate living-area mask using skin-like and saturated warm colors
+        arr = np.array(im).astype(np.float32)
+
+        r = arr[:, :, 0]
+        g = arr[:, :, 1]
+        b = arr[:, :, 2]
+
+        maxc = np.maximum(np.maximum(r, g), b)
+        minc = np.minimum(np.minimum(r, g), b)
+
+        saturation = (maxc - minc) / np.maximum(maxc, 1)
+
+        # Approximate skin / warm organic tones
+        skin_mask = (
+            (r > 80) &
+            (g > 35) &
+            (b > 20) &
+            (r > g * 1.08) &
+            (r > b * 1.18) &
+            ((r - b) > 18)
+        )
+
+        # Approximate colorful living/object regions
+        saturated_mask = (
+            (saturation > 0.28) &
+            (maxc > 70)
+        )
+
+        mask_arr = np.where(skin_mask | saturated_mask, 255, 0).astype(np.uint8)
+
+        mask = Image.fromarray(mask_arr)
+
+        # Smooth and expand mask
+        mask = mask.filter(ImageFilter.MaxFilter(9))
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=5))
+
+        # Fenerbahce version
+        gray = ImageOps.grayscale(im)
+
+        fenerbahce = ImageOps.colorize(
+            gray,
+            black=(255, 220, 0),
+            white=(0, 35, 95)
+        )
+
+        fenerbahce = ImageEnhance.Contrast(fenerbahce).enhance(1.25)
+        fenerbahce = ImageEnhance.Color(fenerbahce).enhance(1.35)
+
+        # White concrete Da Vinci version
+        base = ImageOps.autocontrast(gray)
+        base = ImageEnhance.Contrast(base).enhance(1.35)
+        base = ImageEnhance.Brightness(base).enhance(1.25)
+
+        statue = ImageOps.colorize(
+            base,
+            black=(105, 105, 100),
+            white=(245, 242, 232)
+        )
+
+        embossed = gray.filter(ImageFilter.EMBOSS)
+        embossed = ImageOps.autocontrast(embossed)
+        embossed = ImageEnhance.Contrast(embossed).enhance(1.4)
+
+        emboss_rgb = ImageOps.colorize(
+            embossed,
+            black=(80, 80, 75),
+            white=(255, 252, 240)
+        )
+
+        statue = ImageChops.multiply(statue, emboss_rgb)
+
+        statue_arr = np.array(statue).astype(np.float32)
+
+        # Add concrete-like grain
+        noise = np.random.normal(0, random.uniform(6, 14), statue_arr.shape)
+        statue_arr = statue_arr + noise
+        statue_arr = np.clip(statue_arr, 0, 255).astype(np.uint8)
+
+        da_vinci = Image.fromarray(statue_arr)
+
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+        edges = edges.filter(ImageFilter.MaxFilter(3))
+
+        edge_arr = np.array(edges)
+        edge_mask = edge_arr > 35
+
+        outline = Image.fromarray(
+            np.where(edge_mask, 130, 255).astype(np.uint8)
+        ).convert("RGB")
+
+        da_vinci = ImageChops.multiply(da_vinci, outline)
+
+        da_vinci = da_vinci.filter(ImageFilter.GaussianBlur(radius=0.35))
+        da_vinci = ImageEnhance.Sharpness(da_vinci).enhance(1.6)
+        da_vinci = ImageEnhance.Brightness(da_vinci).enhance(1.12)
+        da_vinci = ImageEnhance.Contrast(da_vinci).enhance(1.08)
+
+        # Composite approximate living areas over Da Vinci background
+        out = Image.composite(fenerbahce, da_vinci, mask)
+
+        # Rotate upside down
+        out = out.transpose(Image.Transpose.ROTATE_180)
+
+        return out
+
+
+
+    if v == "circular_ripple":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        arr = np.array(im)
+        out = arr.copy()
+
+        # Pick a random circular ripple area
+        cx = random.randint(int(w * 0.25), int(w * 0.75))
+        cy = random.randint(int(h * 0.25), int(h * 0.75))
+
+        radius = random.randint(
+            max(40, min(w, h) // 5),
+            max(80, min(w, h) // 3)
+        )
+
+        # Ripple settings
+        amplitude = random.uniform(8, 22)
+        wavelength = random.uniform(18, 38)
+
+        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+
+        dx = xx - cx
+        dy = yy - cy
+        dist = np.sqrt(dx * dx + dy * dy)
+
+        # Circular mask
+        mask = dist < radius
+
+        # Ripple displacement, strongest near the center and fading outward
+        fade = 1 - (dist / radius)
+        fade = np.clip(fade, 0, 1)
+
+        ripple = np.sin(dist / wavelength * 2 * math.pi) * amplitude * fade
+
+        # Avoid division by zero in the center
+        safe_dist = np.where(dist == 0, 1, dist)
+
+        map_x = xx + (dx / safe_dist) * ripple
+        map_y = yy + (dy / safe_dist) * ripple
+
+        map_x = np.clip(map_x, 0, w - 1)
+        map_y = np.clip(map_y, 0, h - 1)
+
+        # Bilinear interpolation
+        x0 = np.floor(map_x).astype(np.int32)
+        x1 = np.clip(x0 + 1, 0, w - 1)
+
+        y0 = np.floor(map_y).astype(np.int32)
+        y1 = np.clip(y0 + 1, 0, h - 1)
+
+        wx = map_x - x0
+        wy = map_y - y0
+
+        warped = (
+            (1 - wx)[..., None] * (1 - wy)[..., None] * arr[y0, x0] +
+            wx[..., None] * (1 - wy)[..., None] * arr[y0, x1] +
+            (1 - wx)[..., None] * wy[..., None] * arr[y1, x0] +
+            wx[..., None] * wy[..., None] * arr[y1, x1]
+        )
+
+        warped = np.clip(warped, 0, 255).astype(np.uint8)
+
+        # Apply distortion only inside the circle
+        out[mask] = warped[mask]
+
+        # Add subtle bright/dark circular rings for water-ripple illusion
+        ring_layer = Image.fromarray(out).convert("RGBA")
+        draw = ImageDraw.Draw(ring_layer, "RGBA")
+
+        for r in range(12, radius, int(wavelength)):
+            alpha = int(90 * (1 - r / radius))
+            width_s = random.randint(1, 3)
+
+            draw.ellipse(
+                [cx - r, cy - r, cx + r, cy + r],
+                outline=(255, 255, 255, alpha),
+                width=width_s
+            )
+
+            if r + 4 < radius:
+                draw.ellipse(
+                    [cx - r - 4, cy - r - 4, cx + r + 4, cy + r + 4],
+                    outline=(0, 0, 0, alpha // 3),
+                    width=1
+                )
+
+        return ring_layer.convert("RGB")
+
+
+
+    if v == "stylized_imagenet":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Preserve image content with softened structure
+        base = im.filter(ImageFilter.SMOOTH_MORE)
+        base = base.filter(ImageFilter.GaussianBlur(radius=0.7))
+
+        # Strong color stylization
+        base = ImageEnhance.Color(base).enhance(1.7)
+        base = ImageEnhance.Contrast(base).enhance(1.25)
+        base = ImageOps.posterize(base, bits=random.choice([4, 5]))
+
+        arr = np.array(base).astype(np.float32)
+
+        # Create synthetic neural-style texture noise
+        noise = np.random.normal(0, 1, (h, w, 3)).astype(np.float32)
+
+        noise_img = Image.fromarray(
+            np.clip((noise - noise.min()) / (noise.max() - noise.min()) * 255, 0, 255).astype(np.uint8)
+        )
+
+        noise_img = noise_img.filter(ImageFilter.GaussianBlur(radius=random.uniform(2.0, 5.0)))
+        noise_arr = np.array(noise_img).astype(np.float32)
+
+        # Create brush-like texture using sinusoidal patterns
+        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+
+        pattern = (
+            np.sin(xx * random.uniform(0.025, 0.055) + yy * random.uniform(0.015, 0.045)) +
+            np.sin(xx * random.uniform(0.045, 0.085) - yy * random.uniform(0.025, 0.065))
+        )
+
+        pattern = (pattern - pattern.min()) / (pattern.max() - pattern.min())
+        pattern = pattern[:, :, None]
+
+        # Mix original colors with stylized texture
+        styled = arr * 0.72 + noise_arr * 0.18 + pattern * 255 * 0.10
+
+        styled = np.clip(styled, 0, 255).astype(np.uint8)
+        out = Image.fromarray(styled)
+
+        # Add edge-aware structure so the image remains readable
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+        edges = edges.filter(ImageFilter.MaxFilter(3))
+
+        edge_arr = np.array(edges)
+        edge_mask = edge_arr > 45
+
+        outline = Image.fromarray(
+            np.where(edge_mask, 45, 255).astype(np.uint8)
+        ).convert("RGB")
+
+        out = ImageChops.multiply(out, outline)
+
+        # Add painterly texture strokes
+        draw = ImageDraw.Draw(out, "RGBA")
+        arr2 = np.array(out).astype(np.int16)
+
+        stroke_count = max(600, min(5000, (w * h) // 350))
+
+        for _ in range(stroke_count):
+
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+
+            color = arr2[y, x]
+
+            color = (
+                int(np.clip(color[0] + random.randint(-25, 25), 0, 255)),
+                int(np.clip(color[1] + random.randint(-25, 25), 0, 255)),
+                int(np.clip(color[2] + random.randint(-25, 25), 0, 255)),
+                random.randint(35, 85)
+            )
+
+            length = random.randint(5, 18)
+            width_s = random.randint(1, 3)
+
+            angle = (
+                math.sin(y * 0.035) +
+                math.cos(x * 0.025) +
+                random.uniform(-1.0, 1.0)
+            )
+
+            x2 = x + int(math.cos(angle) * length)
+            y2 = y + int(math.sin(angle) * length)
+
+            draw.line(
+                [(x, y), (x2, y2)],
+                fill=color,
+                width=width_s
+            )
+
+        # Final stylized correction
+        out = ImageEnhance.Color(out).enhance(1.25)
+        out = ImageEnhance.Contrast(out).enhance(1.15)
+        out = ImageEnhance.Sharpness(out).enhance(1.35)
+
+        return out
+
+    if v == "classic_disney":
+
+        im = im.convert("RGB")
+
+        # Keep the original image readable
+        base = im.filter(ImageFilter.SMOOTH_MORE)
+        base = base.filter(ImageFilter.GaussianBlur(radius=0.6))
+
+        # Soft warm color palette
+        base = ImageEnhance.Color(base).enhance(1.45)
+        base = ImageEnhance.Contrast(base).enhance(1.18)
+        base = ImageEnhance.Brightness(base).enhance(1.08)
+
+        # Reduce colors gently for hand-painted animation look
+        base = ImageOps.posterize(base, bits=5)
+
+        # Create clean cartoon outlines
+        gray = ImageOps.grayscale(im)
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        edges = ImageOps.autocontrast(edges)
+        edges = edges.filter(ImageFilter.MaxFilter(3))
+
+        edge_arr = np.array(edges)
+        edge_mask = edge_arr > 45
+
+        outline = Image.fromarray(
+            np.where(edge_mask, 35, 255).astype(np.uint8)
+        ).convert("RGB")
+
+        out = ImageChops.multiply(base, outline)
+
+        # Add soft golden animation warmth
+        warm = Image.new("RGB", out.size, (255, 225, 185))
+        out = Image.blend(out, warm, 0.10)
+
+        # Add subtle dreamy glow
+        glow = out.filter(ImageFilter.GaussianBlur(radius=4))
+        out = Image.blend(out, glow, 0.16)
+
+        # Final sharpening for animated-cell clarity
+        out = ImageEnhance.Sharpness(out).enhance(1.45)
 
         return out
 

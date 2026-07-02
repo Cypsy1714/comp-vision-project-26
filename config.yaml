@@ -8,7 +8,7 @@ device: auto
 pipeline: [detector, views, cnn, meta]
 
 paths:
-  input: input
+  input: input/detector_tests
   crops: output/crops
   views: output/views
   scores: output/scores

@@ -279,6 +279,10 @@ def run(cfg):
         np.save(dst / f"{s}.npy", np.concatenate(scores) if c["score_layout"] == "stacked" else np.stack(scores))
 
 
+# ---------------------------------------------------------------------------
+# CLI  (python src/cnn.py [--train] [--scratch])
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     import yaml
 

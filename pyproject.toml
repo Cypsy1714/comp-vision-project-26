@@ -7,7 +7,9 @@ dependencies = [
     "pillow",
     "pyyaml",
     "timm>=1.0.27",
-    "torch>=2.12.1",
+    "torch",
+    "ultralytics",
+    "torchvision",
 ]
 
 [tool.uv]

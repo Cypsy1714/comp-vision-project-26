@@ -113,6 +113,38 @@ def center_crop_fallback(image: Image.Image, frac: float = 0.9) -> Image.Image:
     top = (h - ch) // 2
     return image.crop((left, top, left + cw, top + ch))
 
+# Lanczos resampling anti-aliases whether the crop is scaled up or down.
+_RESAMPLE = Image.Resampling.LANCZOS
+
+
+def resize_to_output(
+    image: Image.Image, size: int, mode: str = "fit"
+) -> Image.Image:
+    """Resize ``image`` to a ``size`` x ``size`` square with anti-aliasing.
+
+    Lanczos resampling is used, which anti-aliases both when zooming in
+    (upscaling) and zooming out (downscaling).
+
+    Modes:
+        ``"stretch"``: ignore the aspect ratio and distort the crop so it fills
+            the whole square. Keeps the input mode (e.g. RGB).
+        ``"fit"``: preserve the aspect ratio, scale the crop to fit inside the
+            square, and pad the leftover space with fully transparent pixels,
+            centering the crop. Returns an RGBA image.
+    """
+    size = max(int(size), 1)
+    if mode == "stretch":
+        return image.resize((size, size), _RESAMPLE)
+    # "fit": aspect-preserving, transparent letterbox padding.
+    w, h = image.size
+    scale = min(size / w, size / h)
+    nw = max(int(round(w * scale)), 1)
+    nh = max(int(round(h * scale)), 1)
+    resized = image.resize((nw, nh), _RESAMPLE).convert("RGBA")
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(resized, ((size - nw) // 2, (size - nh) // 2))
+    return canvas
+
 class Detector(ABC):
     """Abstract Stage-1 detector.
 
@@ -195,6 +227,19 @@ class YoloDetector(Detector):
         self.on_no_detection = _cfg_get(cfg, "on_no_detection", "fallback")
         self.device = _resolve_device(_cfg_get(cfg, "device", "auto"))
 
+        # Every saved crop is forced to this square size. ``output_size`` is the
+        # documented detector key; fall back to the shared top-level image_size.
+        self.output_size = int(
+            _cfg_get(cfg, "output_size", _cfg_get(cfg, "image_size", 224))
+        )
+        # "fit" = keep aspect ratio + transparent padding; "stretch" = distort.
+        self.resize_mode = str(_cfg_get(cfg, "resize_mode", "fit")).lower()
+        if self.resize_mode not in ("fit", "stretch"):
+            warnings.warn(
+                f"unknown resize_mode '{self.resize_mode}'; falling back to 'fit'"
+            )
+            self.resize_mode = "fit"
+
         self.model = YOLO(self.weights)
         self.names = dict(self.model.names)  # id -> name
         name_to_id = {v: k for k, v in self.names.items()}
@@ -233,7 +278,9 @@ class YoloDetector(Detector):
         w, h = image.size
         area = float(w * h)
         signals = new_signals()
-        fallback = center_crop_fallback(image)
+        fallback = resize_to_output(
+            center_crop_fallback(image), self.output_size, self.resize_mode
+        )
 
         results = self.model(
             image,
@@ -256,7 +303,11 @@ class YoloDetector(Detector):
             xyxy = boxes.xyxy[i].tolist()
             if cls_id in self.target_class_ids:
                 box = clamp_box(tuple(xyxy), w, h)
-                crop = crop_with_pad(image, box, self.crop_pad)
+                crop = resize_to_output(
+                    crop_with_pad(image, box, self.crop_pad),
+                    self.output_size,
+                    self.resize_mode,
+                )
                 box_area = (box[2] - box[0]) * (box[3] - box[1])
                 candidates.append(
                     Candidate(
@@ -287,7 +338,10 @@ class YoloDetector(Detector):
 def build_detector(cfg) -> Detector:
     """Construct a detector from a full pipeline config (reads ``cfg.detector``)."""
     if isinstance(cfg, dict):
-        section = cfg.get("detector", {})
+        section = dict(cfg.get("detector", {}))
+        # Let the detector fall back to the shared top-level image_size when it
+        # has no output_size of its own.
+        section.setdefault("image_size", cfg.get("image_size", 224))
     else:
         section = getattr(cfg, "detector", cfg)
     return YoloDetector(section)
@@ -308,7 +362,6 @@ def run(cfg):
     src = Path(cfg["paths"]["input"])
     dst = Path(cfg["paths"]["crops"])
     dst.mkdir(parents=True, exist_ok=True)
-    n = cfg["image_size"]
 
     detector = build_detector(cfg)
 
@@ -316,7 +369,9 @@ def run(cfg):
         image = Image.open(path).convert("RGB")
         result = detector.detect(image)
         for k, cand in enumerate(result.candidates):
-            cand.crop.save(dst / f"{path.stem}_cand{k}.jpg")
+            # Transparent-padded ("fit") crops need PNG to keep the alpha.
+            ext = "png" if cand.crop.mode == "RGBA" else "jpg"
+            cand.crop.save(dst / f"{path.stem}_cand{k}.{ext}")
 
         s = result.signals
         per_cand = " ".join(
@@ -328,12 +383,6 @@ def run(cfg):
             f"other_animal={s['other_animal_detected']:.0f} "
             f"fallback={s['was_fallback']:.0f} {per_cand}"
         )
-
-
-    for p in sorted(q for e in EXTS for q in src.glob(e)):
-        # crop biggest
-        im = Image.open(p).convert("RGB").resize((n, n))  # TODO yolo
-        im.save(dst / f"{p.stem}.jpg")
 
 
 if __name__ == "__main__":

@@ -3667,6 +3667,261 @@ def make(im, v):
         out = Image.alpha_composite(out, spatter_layer)
 
         return out.convert("RGB")
+    
+
+    if v == "vivid_cubist":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Boost colors before cubist reconstruction
+        base = ImageEnhance.Color(im).enhance(1.9)
+        base = ImageEnhance.Contrast(base).enhance(1.35)
+        base = ImageEnhance.Brightness(base).enhance(1.05)
+
+        out = Image.new("RGB", (w, h), (20, 20, 25))
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        arr = np.array(base).astype(np.int16)
+
+        # Draw many angular polygon fragments
+        for _ in range(random.randint(700, 1600)):
+
+            cx = random.randint(0, w - 1)
+            cy = random.randint(0, h - 1)
+
+            size = random.randint(
+                max(12, min(w, h) // 45),
+                max(35, min(w, h) // 12)
+            )
+
+            sides = random.choice([3, 3, 4, 5])
+
+            points = []
+
+            angle_offset = random.uniform(0, 2 * math.pi)
+
+            for i in range(sides):
+                angle = angle_offset + 2 * math.pi * i / sides
+                r = random.uniform(size * 0.45, size)
+
+                x = cx + int(math.cos(angle) * r)
+                y = cy + int(math.sin(angle) * r)
+
+                points.append((x, y))
+
+            color = arr[cy, cx]
+
+            # Add vivid cubist color shifts
+            color = (
+                int(np.clip(color[0] + random.randint(-30, 55), 0, 255)),
+                int(np.clip(color[1] + random.randint(-30, 55), 0, 255)),
+                int(np.clip(color[2] + random.randint(-30, 55), 0, 255)),
+                random.randint(145, 230)
+            )
+
+            draw.polygon(
+                points,
+                fill=color,
+                outline=(15, 10, 25, random.randint(80, 150))
+            )
+
+        # Add sharp black angular lines
+        for _ in range(random.randint(90, 180)):
+
+            x1 = random.randint(0, w)
+            y1 = random.randint(0, h)
+            x2 = x1 + random.randint(-w // 3, w // 3)
+            y2 = y1 + random.randint(-h // 3, h // 3)
+
+            draw.line(
+                [(x1, y1), (x2, y2)],
+                fill=(10, 5, 20, random.randint(80, 170)),
+                width=random.randint(1, 4)
+            )
+
+        # Blend with original so the subject stays readable
+        out = Image.blend(base, out, 0.72)
+
+        out = ImageEnhance.Color(out).enhance(1.35)
+        out = ImageEnhance.Contrast(out).enhance(1.18)
+        out = ImageEnhance.Sharpness(out).enhance(1.5)
+
+        return out
+    
+
+    if v == "vivid_cubist_random_fill_frost_bauhaus":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        # Keep original image slightly visible underneath
+        base = ImageEnhance.Color(im).enhance(1.45)
+        base = ImageEnhance.Contrast(base).enhance(1.2)
+        base = ImageEnhance.Brightness(base).enhance(1.05)
+
+        out = base.copy().convert("RGBA")
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        # Create vivid cubist polygon layer
+        cubist_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        cubist_draw = ImageDraw.Draw(cubist_layer, "RGBA")
+
+        polygon_count = random.randint(35, 70)
+
+        for _ in range(polygon_count):
+
+            cx = random.randint(0, w)
+            cy = random.randint(0, h)
+
+            size = random.randint(
+                max(25, min(w, h) // 12),
+                max(50, min(w, h) // 4)
+            )
+
+            points = []
+
+            for i in range(random.randint(3, 6)):
+                angle = 2 * math.pi * i / random.randint(3, 6) + random.uniform(-0.5, 0.5)
+                r = random.randint(size // 3, size)
+
+                x = cx + int(math.cos(angle) * r)
+                y = cy + int(math.sin(angle) * r)
+
+                points.append((x, y))
+
+            color = (
+                random.randint(60, 255),
+                random.randint(30, 220),
+                random.randint(80, 255),
+                random.randint(55, 105)   # lower alpha so background remains visible
+            )
+
+            cubist_draw.polygon(
+                points,
+                fill=color,
+                outline=(20, 20, 20, 80)
+            )
+
+        out = Image.alpha_composite(out, cubist_layer)
+
+        # Random value fill regions
+        fill_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        fill_mask = Image.new("L", (w, h), 0)
+        mask_draw = ImageDraw.Draw(fill_mask)
+
+        region_count = random.randint(4, 9)
+
+        for _ in range(region_count):
+
+            x1 = random.randint(0, w - 1)
+            y1 = random.randint(0, h - 1)
+
+            rw = random.randint(max(25, w // 12), max(45, w // 4))
+            rh = random.randint(max(25, h // 12), max(45, h // 4))
+
+            x2 = min(w, x1 + rw)
+            y2 = min(h, y1 + rh)
+
+            shape = random.choice(["rect", "ellipse", "triangle"])
+
+            if shape == "rect":
+                mask_draw.rectangle([x1, y1, x2, y2], fill=255)
+
+            elif shape == "ellipse":
+                mask_draw.ellipse([x1, y1, x2, y2], fill=255)
+
+            elif shape == "triangle":
+                points = [
+                    ((x1 + x2) // 2, y1),
+                    (x1, y2),
+                    (x2, y2)
+                ]
+                mask_draw.polygon(points, fill=255)
+
+        # Create random value fill
+        random_arr = np.random.randint(
+            0,
+            256,
+            (h, w, 3),
+            dtype=np.uint8
+        )
+
+        random_fill = Image.fromarray(random_arr).convert("RGB")
+
+        # Each run turns the filled region into either frost or Bauhaus
+        fill_style = random.choice(["frost", "bauhaus"])
+
+        if fill_style == "frost":
+
+            styled_fill = random_fill.filter(ImageFilter.GaussianBlur(radius=1.2))
+
+            cold = Image.new("RGB", (w, h), (180, 220, 255))
+            styled_fill = Image.blend(styled_fill, cold, 0.35)
+
+            styled_fill = ImageEnhance.Contrast(styled_fill).enhance(0.85)
+            styled_fill = ImageEnhance.Brightness(styled_fill).enhance(1.12)
+
+        else:
+
+            styled_fill = ImageOps.posterize(random_fill, bits=3)
+
+            cream = Image.new("RGB", (w, h), (235, 226, 205))
+            styled_fill = Image.blend(styled_fill, cream, 0.30)
+
+            bauhaus_draw = ImageDraw.Draw(styled_fill, "RGBA")
+
+            bauhaus_colors = [
+                (220, 40, 35, 160),
+                (245, 200, 35, 160),
+                (25, 80, 180, 160),
+                (20, 20, 20, 180),
+                (245, 245, 235, 120)
+            ]
+
+            for _ in range(random.randint(8, 18)):
+
+                x = random.randint(0, w)
+                y = random.randint(0, h)
+                size = random.randint(20, max(30, min(w, h) // 5))
+                color = random.choice(bauhaus_colors)
+
+                shape = random.choice(["circle", "rect", "line"])
+
+                if shape == "circle":
+                    bauhaus_draw.ellipse(
+                        [x - size, y - size, x + size, y + size],
+                        fill=color,
+                        outline=(20, 20, 20, 150),
+                        width=2
+                    )
+
+                elif shape == "rect":
+                    bauhaus_draw.rectangle(
+                        [x, y, x + size, y + size],
+                        fill=color,
+                        outline=(20, 20, 20, 150),
+                        width=2
+                    )
+
+                else:
+                    bauhaus_draw.line(
+                        [(x, y), (x + random.randint(-size, size), y + random.randint(-size, size))],
+                        fill=color,
+                        width=random.randint(5, 14)
+                    )
+
+        # Apply styled random fill only inside selected mask
+        styled_fill = styled_fill.convert("RGBA")
+        out = Image.composite(styled_fill, out, fill_mask)
+
+        # Final clarity so the original image stays readable
+        out = out.convert("RGB")
+        out = ImageEnhance.Contrast(out).enhance(1.08)
+        out = ImageEnhance.Sharpness(out).enhance(1.25)
+
+        return out
+
 
     if v == "color_jitter":
         im = im.convert("RGB")

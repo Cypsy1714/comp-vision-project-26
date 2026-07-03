@@ -12,11 +12,7 @@ def make(im, v):
     if v == "gray":
         return im.convert("L").convert("RGB")
     if v == "blur":
-        return im.filter(ImageFilter.GaussianBlur(2))
-    if v == "more_blur":
-        return im.filter(ImageFilter.GaussianBlur(10))
-    if v == "most_blur":
-        return im.filter(ImageFilter.GaussianBlur(30))
+        return im.filter(ImageFilter.GaussianBlur(7))
     if v == "sobel":
         return im.convert("L").filter(ImageFilter.FIND_EDGES).convert("RGB")
     if v == "perspective":
@@ -26,26 +22,13 @@ def make(im, v):
             0, 1, 0
         )
         return im.transform((w, h), Image.AFFINE, coeffs)
-    if v == "extra_perspective":
-        w, h = im.size
-        coeffs = (
-            2, 0.5, -1 * w,
-            0, 1, 0
-        )
-        return im.transform((w, h), Image.AFFINE, coeffs)
+   
     if v == "sudoku":
         return sudoku_shuffle(im, grid=8)
-    if v == "solarize":
-        return ImageOps.solarize(im, threshold=128)
     if v == "solarize_light":
         return ImageOps.solarize(im, threshold=192)
     if v == "solarize_dark":
         return ImageOps.solarize(im, threshold=64)
-    if v == "equalize":
-        return ImageOps.equalize(im)
-    if v == "posterize":
-        return ImageOps.posterize(im, bits=2)
-
     if v == "art_nouveau":
         im = im.convert("RGB")
 
@@ -780,132 +763,6 @@ def make(im, v):
         return out
 
 
-    if v == "anime":
-
-        im = im.convert("RGB")
-
-        # Smooth colors while preserving large structures
-        base = im.filter(ImageFilter.MedianFilter(size=5))
-        base = base.filter(ImageFilter.SMOOTH_MORE)
-        base = base.filter(ImageFilter.GaussianBlur(radius=0.6))
-
-        # Reduce the number of colors
-        base = ImageOps.posterize(base, bits=5)
-
-        # Boost saturation and contrast
-        base = ImageEnhance.Color(base).enhance(2.2)
-        base = ImageEnhance.Contrast(base).enhance(1.35)
-        base = ImageEnhance.Sharpness(base).enhance(1.8)
-
-        # Generate black outlines
-        gray = ImageOps.grayscale(im)
-        edges = gray.filter(ImageFilter.FIND_EDGES)
-        edges = ImageOps.autocontrast(edges)
-
-        # Make outlines thicker
-        edges = edges.filter(ImageFilter.MaxFilter(3))
-
-        edge_arr = np.array(edges)
-        edge_mask = edge_arr > 40
-
-        edge_img = Image.fromarray(
-            np.where(edge_mask, 0, 255).astype(np.uint8)
-        ).convert("RGB")
-
-        # Combine outlines with colors
-        out = ImageChops.multiply(base, edge_img)
-
-        # Slight brightness boost
-        out = ImageEnhance.Brightness(out).enhance(1.05)
-
-        return out
-
-
-    if v == "advanced_anime":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        # Smooth the image while keeping major shapes
-        base = im.filter(ImageFilter.MedianFilter(size=5))
-        base = base.filter(ImageFilter.SMOOTH_MORE)
-        base = base.filter(ImageFilter.GaussianBlur(radius=0.8))
-
-        arr = np.array(base).astype(np.float32)
-
-        # Color quantization for cel-shading look
-        levels = random.choice([5, 6, 7])
-        arr = np.floor(arr / (256 / levels)) * (256 / levels)
-        arr = np.clip(arr, 0, 255).astype(np.uint8)
-
-        cel = Image.fromarray(arr)
-
-        # Strong anime-like saturation and contrast
-        cel = ImageEnhance.Color(cel).enhance(2.0)
-        cel = ImageEnhance.Contrast(cel).enhance(1.35)
-        cel = ImageEnhance.Brightness(cel).enhance(1.08)
-
-        # Create clean black outlines
-        gray = ImageOps.grayscale(im)
-        edges = gray.filter(ImageFilter.FIND_EDGES)
-        edges = ImageOps.autocontrast(edges)
-        edges = edges.filter(ImageFilter.MaxFilter(3))
-
-        edge_arr = np.array(edges)
-        edge_mask = edge_arr > random.randint(35, 55)
-
-        outline = Image.fromarray(
-            np.where(edge_mask, 0, 255).astype(np.uint8)
-        ).convert("RGB")
-
-        out = ImageChops.multiply(cel, outline)
-
-        # Add soft bloom on bright areas
-        bright = ImageOps.grayscale(out)
-        bright_arr = np.array(bright)
-
-        bloom_mask = np.where(bright_arr > 185, 255, 0).astype(np.uint8)
-        bloom = Image.fromarray(bloom_mask).filter(ImageFilter.GaussianBlur(radius=6))
-        bloom_rgb = ImageOps.colorize(
-            bloom,
-            black=(0, 0, 0),
-            white=(255, 240, 220)
-        )
-
-        out = Image.blend(out, ImageChops.screen(out, bloom_rgb), 0.18)
-
-        # Add slight blue-purple shadow tone
-        shadow_overlay = Image.new("RGB", (w, h), (40, 55, 95))
-        shadow_mask = ImageOps.grayscale(out)
-        shadow_mask = ImageOps.invert(shadow_mask)
-        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=4))
-
-        out = Image.composite(
-            Image.blend(out, shadow_overlay, 0.18),
-            out,
-            shadow_mask
-        )
-
-        # Add small white eye/highlight sparkle-like points randomly
-        draw = ImageDraw.Draw(out, "RGBA")
-
-        for _ in range(random.randint(8, 20)):
-            x = random.randint(0, w - 1)
-            y = random.randint(0, h - 1)
-            r = random.randint(1, 3)
-
-            draw.ellipse(
-                [x - r, y - r, x + r, y + r],
-                fill=(255, 255, 255, random.randint(70, 140))
-            )
-
-        # Final sharpening
-        out = ImageEnhance.Sharpness(out).enhance(1.6)
-
-        return out
-
-
-
     if v == "random_yellow_frame":
 
         im = im.convert("RGB")
@@ -1090,17 +947,7 @@ def make(im, v):
         return out
 
     
-    if v == "cartoon":
-         base = ImageOps.posterize(im.convert("RGB"), 3)
-         base = base.filter(ImageFilter.SMOOTH_MORE)
 
-         edges = im.convert("L").filter(ImageFilter.FIND_EDGES)
-         edges = ImageOps.invert(edges)
-         edges = edges.point(lambda x: 255 if x > 120 else 0)
-         edges = edges.convert("RGB")
-
-         return ImageChops.multiply(base, edges)
-    
     if v == "comic_clean":
         return ligne_claire(im)
     
@@ -1156,95 +1003,8 @@ def make(im, v):
         return Image.fromarray(out.astype(np.uint8))
     
 
-    if v == "inception_fold":
-        return inception_fold(im)
-
     if v == "warhol_random_fill":
         return warhol_random_fill(im)
-
-    if v == "picasso":
-        im = im.convert("RGB")
-        w, h = im.size
-
-    # Renkleri sertleştir
-        base = ImageEnhance.Color(im).enhance(2.0)
-        base = ImageEnhance.Contrast(base).enhance(1.6)
-        base = ImageOps.posterize(base, bits=3)
-
-        out = base.copy()
-
-    # Resmi rastgele parçalara bölüp oynat
-        for _ in range(88):
-            bw = random.randint(w // 10, w // 5)
-            bh = random.randint(h // 10, h // 5)
-
-            x = random.randint(0, w - bw)
-            y = random.randint(0, h - bh)
-
-            piece = base.crop((x, y, x + bw, y + bh))
-
-        # Bazı parçaları aynala / döndür
-            if random.random() < 0.5:
-                piece = ImageOps.mirror(piece)
-
-            angle = random.choice([-15, -8, 8, 15])
-            piece = piece.rotate(angle, resample=Image.BICUBIC, expand=False)
-
-            nx = min(max(x + random.randint(-w // 10, w // 10), 0), w - bw)
-            ny = min(max(y + random.randint(-h // 10, h // 10), 0), h - bh)
-
-            out.paste(piece, (nx, ny))
-
-        return out
-    
-
-    if v == "superman_laser_eyes":
-        im = im.convert("RGB")
-        out = im.copy()
-        draw = ImageDraw.Draw(out, "RGBA")
-
-        w, h = out.size
-
-        # Basit varsayım: gözler görüntünün üst-orta kısmında
-        eye_y = int(h * 0.38)
-        left_eye_x = int(w * 0.42)
-        right_eye_x = int(w * 0.58)
-
-        laser_length = int(w * 0.9)
-
-        for eye_x in [left_eye_x, right_eye_x]:
-            end_x = eye_x + laser_length
-            end_y = eye_y + random.randint(-25, 25)
-
-            # Dış glow
-            for width, alpha in [(26, 50), (18, 80), (10, 130)]:
-                draw.line(
-                    [(eye_x, eye_y), (end_x, end_y)],
-                    fill=(255, 0, 0, alpha),
-                    width=width
-                )
-
-            # Ana lazer
-            draw.line(
-                [(eye_x, eye_y), (end_x, end_y)],
-                fill=(255, 20, 20, 230),
-                width=5
-            )
-
-            # Beyaz sıcak merkez
-            draw.line(
-                [(eye_x, eye_y), (end_x, end_y)],
-                fill=(255, 230, 230, 180),
-                width=2
-            )
-
-            # Göz parlaması
-            draw.ellipse(
-                [eye_x - 12, eye_y - 12, eye_x + 12, eye_y + 12],
-                fill=(255, 0, 0, 160)
-            )
-
-        return out
 
     if v == "frost":
         im = im.convert("RGB")
@@ -1700,22 +1460,6 @@ def make(im, v):
 
         return Image.fromarray(wave_arr)
     
-
-    if v == "multiplicative_noise":
-
-        im = im.convert("RGB")
-        arr = np.array(im).astype(np.float32)
-
-        # Generate multiplicative Gaussian noise
-        sigma = random.uniform(0.15, 0.45)
-        noise = np.random.normal(0, sigma, arr.shape)
-
-        # Apply multiplicative noise
-        arr = arr * (1.0 + noise)
-
-        arr = np.clip(arr, 0, 255).astype(np.uint8)
-
-        return Image.fromarray(arr)
     
 
     if v == "neighbor_majority_20000":
@@ -1864,124 +1608,6 @@ def make(im, v):
         return final
 
 
-    if v == "wrap_roll":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        out = Image.new("RGB", (w, h))
-
-        # Fill the background with random image fragments
-        tile = random.randint(40, 100)
-
-        for y in range(0, h, tile):
-            for x in range(0, w, tile):
-
-                tw = min(tile, w - x)
-                th = min(tile, h - y)
-
-                sx = random.randint(0, max(0, w - tw))
-                sy = random.randint(0, max(0, h - th))
-
-                fragment = im.crop((sx, sy, sx + tw, sy + th))
-
-                if random.random() < 0.5:
-                    fragment = ImageOps.mirror(fragment)
-
-                if random.random() < 0.5:
-                    fragment = fragment.rotate(
-                        random.choice([90, 180, 270]),
-                        expand=False
-                    )
-
-                out.paste(fragment, (x, y))
-
-        # Roll the image from one side like a wrap
-        direction = random.choice(["left", "right", "top", "bottom"])
-        roll_ratio = random.uniform(0.35, 0.7)
-
-        if direction in ["left", "right"]:
-
-            strip_w = int(w * roll_ratio)
-
-            if direction == "left":
-                strip = im.crop((0, 0, strip_w, h))
-                x0 = 0
-            else:
-                strip = im.crop((w - strip_w, 0, w, h))
-                x0 = w - strip_w
-
-            draw = ImageDraw.Draw(out, "RGBA")
-
-            # Compress the strip progressively to imitate rolling
-            steps = 28
-
-            for i in range(steps):
-
-                t = i / steps
-
-                current_w = max(2, int(strip_w * (1 - t) ** 1.6))
-
-                layer = strip.resize(
-                    (current_w, h),
-                    Image.Resampling.BICUBIC
-                )
-
-                if direction == "left":
-                    xpos = x0 + i * strip_w // steps
-                else:
-                    xpos = x0 + strip_w - current_w - i * strip_w // steps
-
-                out.paste(layer, (xpos, 0))
-
-                # Draw a shadow to enhance the roll illusion
-                draw.line(
-                    [(xpos, 0), (xpos, h)],
-                    fill=(0, 0, 0, 25),
-                    width=3
-                )
-
-        else:
-
-            strip_h = int(h * roll_ratio)
-
-            if direction == "top":
-                strip = im.crop((0, 0, w, strip_h))
-                y0 = 0
-            else:
-                strip = im.crop((0, h - strip_h, w, h))
-                y0 = h - strip_h
-
-            draw = ImageDraw.Draw(out, "RGBA")
-
-            steps = 28
-
-            for i in range(steps):
-
-                t = i / steps
-
-                current_h = max(2, int(strip_h * (1 - t) ** 1.6))
-
-                layer = strip.resize(
-                    (w, current_h),
-                    Image.Resampling.BICUBIC
-                )
-
-                if direction == "top":
-                    ypos = y0 + i * strip_h // steps
-                else:
-                    ypos = y0 + strip_h - current_h - i * strip_h // steps
-
-                out.paste(layer, (0, ypos))
-
-                draw.line(
-                    [(0, ypos), (w, ypos)],
-                    fill=(0, 0, 0, 25),
-                    width=3
-                )
-
-        return out
-
 
     if v == "mosaic_4_tile":
 
@@ -2020,7 +1646,6 @@ def make(im, v):
             "sobel",
             "red_green_grid",
             "wave",
-            "blackout",
             "center_shrink_bauhaus_fill",
             "horizontal_stretch"
         ]
@@ -2240,75 +1865,6 @@ def make(im, v):
         return out.convert("RGB")
 
 
-    if v == "color_quantization":
-
-        im = im.convert("RGB")
-        arr = np.array(im)
-
-        # Reduce color levels per channel
-        levels = random.choice([3, 4, 5, 6, 8])
-
-        step = 256 // levels
-        quantized = (arr // step) * step
-
-        quantized = np.clip(quantized, 0, 255).astype(np.uint8)
-
-        out = Image.fromarray(quantized)
-
-        return out
-
-    if v == "elastic_transform":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        arr = np.array(im)
-
-        # Create random displacement fields
-        alpha = random.uniform(25, 60)
-        sigma = random.uniform(6, 12)
-
-        dx = np.random.uniform(-1, 1, (h, w))
-        dy = np.random.uniform(-1, 1, (h, w))
-
-        dx_img = Image.fromarray(((dx + 1) * 127.5).astype(np.uint8))
-        dy_img = Image.fromarray(((dy + 1) * 127.5).astype(np.uint8))
-
-        # Smooth displacement fields
-        dx_img = dx_img.filter(ImageFilter.GaussianBlur(radius=sigma))
-        dy_img = dy_img.filter(ImageFilter.GaussianBlur(radius=sigma))
-
-        dx = (np.array(dx_img).astype(np.float32) / 127.5 - 1) * alpha
-        dy = (np.array(dy_img).astype(np.float32) / 127.5 - 1) * alpha
-
-        # Create coordinate grid
-        x, y = np.meshgrid(np.arange(w), np.arange(h))
-
-        map_x = np.clip(x + dx, 0, w - 1).astype(np.float32)
-        map_y = np.clip(y + dy, 0, h - 1).astype(np.float32)
-
-        # Bilinear interpolation
-        x0 = np.floor(map_x).astype(np.int32)
-        x1 = np.clip(x0 + 1, 0, w - 1)
-        y0 = np.floor(map_y).astype(np.int32)
-        y1 = np.clip(y0 + 1, 0, h - 1)
-
-        wa = (x1 - map_x) * (y1 - map_y)
-        wb = (x1 - map_x) * (map_y - y0)
-        wc = (map_x - x0) * (y1 - map_y)
-        wd = (map_x - x0) * (map_y - y0)
-
-        out = (
-            wa[..., None] * arr[y0, x0] +
-            wb[..., None] * arr[y1, x0] +
-            wc[..., None] * arr[y0, x1] +
-            wd[..., None] * arr[y1, x1]
-        )
-
-        out = np.clip(out, 0, 255).astype(np.uint8)
-
-        return Image.fromarray(out)
-
 
 
     if v == "drunk":
@@ -2365,176 +1921,6 @@ def make(im, v):
 
         return out
 
-
-    if v == "blackout":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        # Create a black canvas
-        black = Image.new("RGB", (w, h), (0, 0, 0))
-
-        # Create a grayscale mask
-        mask = Image.new("L", (w, h), 0)
-        draw = ImageDraw.Draw(mask)
-
-        # Randomize eye opening size
-        eye_w = int(w * random.uniform(0.22, 0.32))
-        eye_h = int(h * random.uniform(0.22, 0.30))
-
-        eye_y = int(h * random.uniform(0.48, 0.58))
-
-        eye_distance = int(w * random.uniform(0.12, 0.18))
-
-        left_x = w // 2 - eye_distance - eye_w // 2
-        right_x = w // 2 + eye_distance - eye_w // 2
-
-        # Draw the two eye openings
-        draw.ellipse(
-            (
-                left_x,
-                eye_y - eye_h // 2,
-                left_x + eye_w,
-                eye_y + eye_h // 2,
-            ),
-            fill=255,
-        )
-
-        draw.ellipse(
-            (
-                right_x,
-                eye_y - eye_h // 2,
-                right_x + eye_w,
-                eye_y + eye_h // 2,
-            ),
-            fill=255,
-        )
-
-        # Slightly connect the two eyes
-        bridge_h = int(eye_h * 0.25)
-        draw.rectangle(
-            (
-                left_x + eye_w - eye_w // 8,
-                eye_y - bridge_h // 2,
-                right_x + eye_w // 8,
-                eye_y + bridge_h // 2,
-            ),
-            fill=180,
-        )
-
-        # Heavy feathering for blackout effect
-        blur_radius = random.randint(35, 70)
-        mask = mask.filter(ImageFilter.GaussianBlur(blur_radius))
-
-        # Composite original image with black background
-        out = Image.composite(im, black, mask)
-
-        # Slight blur to imitate fading vision
-        out = out.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.5, 1.5)))
-
-        # Mild chromatic aberration
-        arr = np.array(out)
-
-        r = np.roll(arr[:, :, 0], 2, axis=1)
-        g = arr[:, :, 1]
-        b = np.roll(arr[:, :, 2], -2, axis=1)
-
-        out = Image.fromarray(np.stack([r, g, b], axis=2))
-
-        return out
-
-
-    if v == "post_impressionist":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        # Boost color and contrast for a vivid painted look
-        base = ImageEnhance.Color(im).enhance(1.8)
-        base = ImageEnhance.Contrast(base).enhance(1.25)
-        base = ImageEnhance.Brightness(base).enhance(1.05)
-
-        # Posterize colors to reduce photographic smoothness
-        base = ImageOps.posterize(base, bits=5)
-
-        out = base.copy()
-        draw = ImageDraw.Draw(out, "RGBA")
-
-        arr = np.array(base).astype(np.int16)
-
-        # Brush stroke settings
-        stroke_count = int((w * h) / 550)
-        stroke_count = max(1200, min(stroke_count, 9000))
-
-        for _ in range(stroke_count):
-
-            x = random.randint(0, w - 1)
-            y = random.randint(0, h - 1)
-
-            color = arr[y, x]
-
-            # Slight color variation per stroke
-            color = (
-                int(np.clip(color[0] + random.randint(-18, 18), 0, 255)),
-                int(np.clip(color[1] + random.randint(-18, 18), 0, 255)),
-                int(np.clip(color[2] + random.randint(-18, 18), 0, 255)),
-                random.randint(40, 90)
-            )
-
-            length = random.randint(4, 10)
-            width_s = random.randint(1, 3)
-
-            # Direction changes with position for swirling painted movement
-            angle = (
-                math.sin(y * 0.035) * 1.2 +
-                math.cos(x * 0.025) * 1.2 +
-                random.uniform(-0.8, 0.8)
-            )
-
-            x2 = x + int(math.cos(angle) * length)
-            y2 = y + int(math.sin(angle) * length)
-
-            draw.line(
-                [(x, y), (x2, y2)],
-                fill=color,
-                width=width_s
-            )
-
-        # Add darker short strokes for texture
-        for _ in range(stroke_count // 3):
-
-            x = random.randint(0, w - 1)
-            y = random.randint(0, h - 1)
-
-            color = arr[y, x]
-            dark = (
-                max(0, int(color[0] * 0.55)),
-                max(0, int(color[1] * 0.55)),
-                max(0, int(color[2] * 0.55)),
-                random.randint(70, 130)
-            )
-
-            length = random.randint(4, 14)
-            angle = random.uniform(0, 2 * math.pi)
-
-            x2 = x + int(math.cos(angle) * length)
-            y2 = y + int(math.sin(angle) * length)
-
-            draw.line(
-                [(x, y), (x2, y2)],
-                fill=dark,
-                width=random.randint(1, 3)
-            )
-
-        # Slight smoothing to merge strokes
-        out = out.filter(ImageFilter.GaussianBlur(radius=0.35))
-
-        # Final vivid color correction
-        out = ImageEnhance.Color(out).enhance(1.25)
-        out = ImageEnhance.Contrast(out).enhance(1.15)
-        out = ImageEnhance.Sharpness(out).enhance(1.4)
-
-        return out
     
 
     if v == "white_concrete_da_vinci":
@@ -2858,57 +2244,6 @@ def make(im, v):
         return Image.fromarray(warped)
 
 
-
-    if v == "orange_noir_jazz":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        # Convert image to grayscale for controlled tonal mapping
-        gray = ImageOps.grayscale(im)
-
-        # Strong contrast for noir silhouettes
-        gray = ImageOps.autocontrast(gray)
-        gray = ImageEnhance.Contrast(gray).enhance(1.75)
-        gray = ImageEnhance.Brightness(gray).enhance(0.82)
-
-        # Map tones to dark brown / burnt orange / amber
-        out = ImageOps.colorize(
-            gray,
-            black=(8, 5, 4),
-            mid=(92, 42, 18),
-            white=(245, 120, 22)
-        )
-
-        # Add warm orange glow
-        glow = out.filter(ImageFilter.GaussianBlur(radius=8))
-        orange = Image.new("RGB", (w, h), (255, 105, 12))
-        glow = Image.blend(glow, orange, 0.22)
-        out = Image.blend(out, glow, 0.18)
-
-        # Add dark vignette
-        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
-        cx, cy = w / 2, h / 2
-        dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-        dist = dist / dist.max()
-
-        vignette = 1 - np.clip((dist - 0.25) / 0.75, 0, 1) * 0.55
-
-        arr = np.array(out).astype(np.float32)
-        arr = arr * vignette[:, :, None]
-
-        # Add subtle film grain
-        noise = np.random.normal(0, 7, arr.shape)
-        arr = arr + noise
-
-        arr = np.clip(arr, 0, 255).astype(np.uint8)
-        out = Image.fromarray(arr)
-
-        # Final punchy noir correction
-        out = ImageEnhance.Contrast(out).enhance(1.22)
-        out = ImageEnhance.Color(out).enhance(1.15)
-
-        return out
     
 
     if v == "orange_noir_expansion":
@@ -3401,110 +2736,6 @@ def make(im, v):
 
         return ring_layer.convert("RGB")
 
-
-
-    if v == "stylized_imagenet":
-
-        im = im.convert("RGB")
-        w, h = im.size
-
-        # Preserve image content with softened structure
-        base = im.filter(ImageFilter.SMOOTH_MORE)
-        base = base.filter(ImageFilter.GaussianBlur(radius=0.7))
-
-        # Strong color stylization
-        base = ImageEnhance.Color(base).enhance(1.7)
-        base = ImageEnhance.Contrast(base).enhance(1.25)
-        base = ImageOps.posterize(base, bits=random.choice([4, 5]))
-
-        arr = np.array(base).astype(np.float32)
-
-        # Create synthetic neural-style texture noise
-        noise = np.random.normal(0, 1, (h, w, 3)).astype(np.float32)
-
-        noise_img = Image.fromarray(
-            np.clip((noise - noise.min()) / (noise.max() - noise.min()) * 255, 0, 255).astype(np.uint8)
-        )
-
-        noise_img = noise_img.filter(ImageFilter.GaussianBlur(radius=random.uniform(2.0, 5.0)))
-        noise_arr = np.array(noise_img).astype(np.float32)
-
-        # Create brush-like texture using sinusoidal patterns
-        yy, xx = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
-
-        pattern = (
-            np.sin(xx * random.uniform(0.025, 0.055) + yy * random.uniform(0.015, 0.045)) +
-            np.sin(xx * random.uniform(0.045, 0.085) - yy * random.uniform(0.025, 0.065))
-        )
-
-        pattern = (pattern - pattern.min()) / (pattern.max() - pattern.min())
-        pattern = pattern[:, :, None]
-
-        # Mix original colors with stylized texture
-        styled = arr * 0.72 + noise_arr * 0.18 + pattern * 255 * 0.10
-
-        styled = np.clip(styled, 0, 255).astype(np.uint8)
-        out = Image.fromarray(styled)
-
-        # Add edge-aware structure so the image remains readable
-        gray = ImageOps.grayscale(im)
-        edges = gray.filter(ImageFilter.FIND_EDGES)
-        edges = ImageOps.autocontrast(edges)
-        edges = edges.filter(ImageFilter.MaxFilter(3))
-
-        edge_arr = np.array(edges)
-        edge_mask = edge_arr > 45
-
-        outline = Image.fromarray(
-            np.where(edge_mask, 45, 255).astype(np.uint8)
-        ).convert("RGB")
-
-        out = ImageChops.multiply(out, outline)
-
-        # Add painterly texture strokes
-        draw = ImageDraw.Draw(out, "RGBA")
-        arr2 = np.array(out).astype(np.int16)
-
-        stroke_count = max(600, min(5000, (w * h) // 350))
-
-        for _ in range(stroke_count):
-
-            x = random.randint(0, w - 1)
-            y = random.randint(0, h - 1)
-
-            color = arr2[y, x]
-
-            color = (
-                int(np.clip(color[0] + random.randint(-25, 25), 0, 255)),
-                int(np.clip(color[1] + random.randint(-25, 25), 0, 255)),
-                int(np.clip(color[2] + random.randint(-25, 25), 0, 255)),
-                random.randint(35, 85)
-            )
-
-            length = random.randint(5, 18)
-            width_s = random.randint(1, 3)
-
-            angle = (
-                math.sin(y * 0.035) +
-                math.cos(x * 0.025) +
-                random.uniform(-1.0, 1.0)
-            )
-
-            x2 = x + int(math.cos(angle) * length)
-            y2 = y + int(math.sin(angle) * length)
-
-            draw.line(
-                [(x, y), (x2, y2)],
-                fill=color,
-                width=width_s
-            )
-
-        # Final stylized correction
-        out = ImageEnhance.Color(out).enhance(1.25)
-        out = ImageEnhance.Contrast(out).enhance(1.15)
-        out = ImageEnhance.Sharpness(out).enhance(1.35)
-
-        return out
 
     if v == "classic_disney":
 

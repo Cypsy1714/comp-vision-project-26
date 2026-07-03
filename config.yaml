@@ -8,7 +8,7 @@ device: auto
 pipeline: [detector, views, cnn, meta]
 
 paths:
-  input: input
+  input: input/detector_tests
   crops: output/crops
   views: output/views
   scores: output/scores
@@ -19,6 +19,8 @@ detector:
   weights: yolo11l.pt
   conf: 0.25
   reject_on_no_animal: true   # toggle
+  output_size: 224            # every saved crop is forced to this square size
+  resize_mode: fit            # "fit" = keep aspect + transparent padding, "stretch" = distort to fill
 
 # part 2 — B
 views:

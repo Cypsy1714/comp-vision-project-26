@@ -6,340 +6,277 @@ import random
 from pathlib import Path
 
 import numpy as np
+import timm
 import torch
 import torch.nn as nn
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision import models, transforms
-from torchvision.models import EfficientNet_B0_Weights
+from torch.utils.data import DataLoader, Dataset
+
+# imagenet normalization, used for every model so inputs are always the same
+MEAN = np.array([0.485, 0.456, 0.406], dtype="float32")
+STD = np.array([0.229, 0.224, 0.225], dtype="float32")
 
 
-# ---------------------------------------------------------------------------
-# device + transforms
-# ---------------------------------------------------------------------------
-
-_IMAGENET_MEAN = [0.485, 0.456, 0.406]
-_IMAGENET_STD  = [0.229, 0.224, 0.225]
-
-
-def get_device(cfg) -> torch.device:
-    d = cfg.get("device", "auto")
-    if d == "auto":
-        if torch.cuda.is_available():
-            return torch.device("cuda")
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        return torch.device("cpu")
-    return torch.device(d)
+# pick the compute device from the config ("auto" tries cuda, then mps, then cpu)
+def get_device(cfg):
+    d = cfg["device"]
+    if d != "auto":
+        return torch.device(d)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
-def make_transform(cfg) -> transforms.Compose:
-    """Clean deterministic transform — used for val and scoring."""
-    n = cfg["image_size"]
-    return transforms.Compose([
-        transforms.Resize((n, n)),
-        transforms.ToTensor(),
-        transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
-    ])
+# timm backbone (imagenet weights or random) with our own pooled linear head on top
+class TimmModel(nn.Module):
+    def __init__(self, backbone, pretrained, num_classes):
+        super().__init__()
+        self.base = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="")
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.head = nn.Linear(self.base.num_features, num_classes)
+
+    def forward(self, x):
+        return self.head(self.pool(self.base.forward_features(x)).flatten(1))
+
+    def freeze_base(self, freeze):
+        for p in self.base.parameters():
+            p.requires_grad = not freeze
 
 
-def _make_train_transform(cfg) -> transforms.Compose:
-    """Augmented transform — training only, never applied to val or scoring."""
-    n = cfg["image_size"]
-    return transforms.Compose([
-        transforms.RandomResizedCrop(n, scale=(0.7, 1.0)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3)], p=0.5),
-        transforms.ToTensor(),
-        transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
-    ])
+# small cnn built from the config: conv blocks from "channels", dense layers from "hidden"
+class CustomCNN(nn.Module):
+    def __init__(self, channels, hidden, num_classes):
+        super().__init__()
+        blocks, c_in = [], 3
+        for c in channels:
+            blocks += [nn.Conv2d(c_in, c, 3, padding=1), nn.BatchNorm2d(c), nn.ReLU(), nn.MaxPool2d(2)]
+            c_in = c
+        self.base = nn.Sequential(*blocks)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        layers = []
+        for h in hidden:
+            layers += [nn.Linear(c_in, h), nn.ReLU()]
+            c_in = h
+        self.head = nn.Sequential(*layers, nn.Linear(c_in, num_classes))
+
+    def forward(self, x):
+        return self.head(self.pool(self.base(x)).flatten(1))
+
+    def freeze_base(self, freeze):
+        for p in self.base.parameters():
+            p.requires_grad = not freeze
 
 
-# ---------------------------------------------------------------------------
-# dataset
-# ---------------------------------------------------------------------------
+# build one model from its entry in cnn.models
+def build_model(mcfg, num_classes):
+    if mcfg["type"] == "timm":
+        return TimmModel(mcfg["backbone"], mcfg["pretrained"], num_classes)
+    return CustomCNN(mcfg["channels"], mcfg["hidden"], num_classes)
 
-class CropDataset(Dataset):
-    """
-    Reads crops/{stem}.jpg, labels from labels.csv.
-    Rows with label == -1 are excluded (handled by the meta stage).
-    Pass transform=None only when you need the index for splitting — never
-    call __getitem__ on a None-transform instance.
-    """
 
-    def __init__(self, crops_dir: Path, labels_csv: Path, transform):
-        with open(labels_csv, newline="") as f:
-            rows = list(csv.DictReader(f))
-        self.samples = [
-            (crops_dir / r["filename"], int(r["label"]))
-            for r in rows
-            if int(r["label"]) != -1 and (crops_dir / r["filename"]).exists()
-        ]
-        self.transform = transform
+# macro f1: f1 per class, averaged over all classes (same metric as the example project)
+def macro_f1(y_true, y_pred, num_classes):
+    f1s = []
+    for c in range(num_classes):
+        tp = sum(1 for t, p in zip(y_true, y_pred) if t == c and p == c)
+        fp = sum(1 for t, p in zip(y_true, y_pred) if t != c and p == c)
+        fn = sum(1 for t, p in zip(y_true, y_pred) if t == c and p != c)
+        f1s.append(2 * tp / (2 * tp + fp + fn) if tp + fp + fn else 0.0)
+    return sum(f1s) / num_classes
+
+
+# inverse-frequency class weights, normalized so the mean weight is ~1 (same math as the example)
+def class_weights(labels, num_classes):
+    counts = torch.zeros(num_classes, dtype=torch.double)
+    for y in labels:
+        counts[y] += 1
+    present = counts > 0
+    inv = torch.zeros(num_classes, dtype=torch.double)
+    inv[present] = 1.0 / counts[present]
+    if present.any():
+        inv[present] = inv[present] / inv[present].mean()
+    inv[~present] = 1.0
+    return inv.float()
+
+
+# lr schedule: linear warmup then cosine decay, stepped once per batch (same math as the example)
+def cosine_warmup(optimizer, warmup_epochs, total_epochs, steps_per_epoch):
+    total_steps = max(1, total_epochs * steps_per_epoch)
+    warmup_steps = min(int(round(warmup_epochs * steps_per_epoch)), total_steps - 1)
+
+    def lr_lambda(step):
+        if warmup_steps > 0 and step < warmup_steps:
+            return (step + 1) / warmup_steps
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+
+# "0003_cand1__blur.jpg" -> "0003", the stem of the original input image
+def original_stem(name):
+    return name.split("__")[0].split("_cand")[0]
+
+
+# read labels.csv into {stem: label}
+def load_labels(path):
+    with open(path) as f:
+        return {Path(r["filename"]).stem: int(r["label"]) for r in csv.DictReader(f)}
+
+
+# open an image and turn it into a normalized (3, n, n) float tensor
+def to_tensor(path, n):
+    im = Image.open(path).convert("RGB").resize((n, n))
+    arr = (np.asarray(im, dtype="float32") / 255.0 - MEAN) / STD
+    return torch.from_numpy(arr).permute(2, 0, 1)
+
+
+# dataset over (image path, label) pairs
+class ImageDataset(Dataset):
+    def __init__(self, samples, n):
+        self.samples = samples
+        self.n = n
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
-        path, label = self.samples[idx]
-        img = Image.open(path).convert("RGB")
-        if self.transform is not None:
-            img = self.transform(img)
-        return img, label
-
-    @property
-    def labels(self) -> list[int]:
-        return [lbl for _, lbl in self.samples]
+    def __getitem__(self, i):
+        path, label = self.samples[i]
+        return to_tensor(path, self.n), label
 
 
-def _stratified_split(dataset: CropDataset, val_frac: float, seed: int):
-    """
-    80 / 20 stratified split.  Classes with < 2 images go entirely to train
-    so we never crash on tiny classes.
-    Returns (train_indices, val_indices).
-    """
-    rng = random.Random(seed)
-
-    by_class: dict[int, list[int]] = {}
-    for i, lbl in enumerate(dataset.labels):
-        by_class.setdefault(lbl, []).append(i)
-
-    train_idx, val_idx = [], []
-    print("[cnn] per-class split:")
-    for cls in sorted(by_class):
-        idxs = by_class[cls]
-        rng.shuffle(idxs)
-        n_val = math.ceil(len(idxs) * val_frac) if len(idxs) >= 2 else 0
-        val_idx.extend(idxs[:n_val])
-        train_idx.extend(idxs[n_val:])
-        print(f"  class {cls:2d}: {len(idxs):3d} total → train {len(idxs) - n_val}  val {n_val}")
-
-    return train_idx, val_idx
+# collect (path, label) pairs from the crops or views folder, skipping unlabeled (-1) images
+def gather_samples(cfg):
+    c = cfg["cnn"]
+    folder = Path(cfg["paths"]["views" if c["train_on"] == "views" else "crops"])
+    labels = load_labels(c["labels"])
+    samples = []
+    for p in sorted(folder.glob("*.jpg")):
+        label = labels.get(original_stem(p.stem), -1)
+        if label != -1:
+            samples.append((p, label))
+    if not samples:
+        raise SystemExit(f"no labeled training images found in {folder}")
+    return samples
 
 
-# ---------------------------------------------------------------------------
-# model
-# ---------------------------------------------------------------------------
-
-def build_model(cfg) -> nn.Module:
-    pretrained = cfg["cnn"]["pretrained"]
-    weights = EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
-    model = models.efficientnet_b0(weights=weights)
-    in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features, cfg["num_classes"])
-    return model
+# split samples into train/val so all versions of one input image stay on the same side
+def split_train_val(samples, val_split, seed):
+    stems = sorted({original_stem(p.stem) for p, _ in samples})
+    random.Random(seed).shuffle(stems)
+    val_stems = set(stems[: int(len(stems) * val_split)])
+    train_s = [s for s in samples if original_stem(s[0].stem) not in val_stems]
+    val_s = [s for s in samples if original_stem(s[0].stem) in val_stems]
+    return train_s, val_s
 
 
-# ---------------------------------------------------------------------------
-# macro-F1 (sklearn if present, else manual)
-# ---------------------------------------------------------------------------
-
-def _macro_f1(preds: list[int], targets: list[int], num_classes: int) -> float:
-    try:
-        from sklearn.metrics import f1_score
-        return float(f1_score(targets, preds, average="macro", zero_division=0))
-    except ImportError:
-        pass
-    f1s = []
-    for c in range(num_classes):
-        tp = sum(p == c and t == c for p, t in zip(preds, targets))
-        fp = sum(p == c and t != c for p, t in zip(preds, targets))
-        fn = sum(p != c and t == c for p, t in zip(preds, targets))
-        prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1s.append(2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0)
-    return sum(f1s) / len(f1s)
-
-
-# ---------------------------------------------------------------------------
-# train / eval helpers
-# ---------------------------------------------------------------------------
-
-def _train_one_epoch(model, loader, criterion, optimizer, device) -> float:
+# one training epoch, returns the mean batch loss
+def run_epoch(model, loader, criterion, optimizer, scheduler, device):
     model.train()
-    total_loss = 0.0
-    for imgs, labels in loader:
-        imgs, labels = imgs.to(device), labels.to(device)
+    total = 0.0
+    for xs, ys in loader:
+        xs, ys = xs.to(device), ys.to(device)
         optimizer.zero_grad()
-        loss = criterion(model(imgs), labels)
+        loss = criterion(model(xs), ys)
         loss.backward()
         optimizer.step()
-        total_loss += loss.item() * len(imgs)
-    return total_loss / len(loader.dataset)
+        scheduler.step()
+        total += loss.item()
+    return total / max(1, len(loader))
 
 
-def _eval_epoch(model, loader, criterion, device, num_classes: int):
+# macro f1 of the model on a loader
+@torch.no_grad()
+def evaluate(model, loader, device, num_classes):
     model.eval()
-    total_loss, correct = 0.0, 0
-    all_preds: list[int] = []
-    all_targets: list[int] = []
-    with torch.no_grad():
-        for imgs, labels in loader:
-            imgs, labels = imgs.to(device), labels.to(device)
-            logits = model(imgs)
-            total_loss += criterion(logits, labels).item() * len(imgs)
-            preds = logits.argmax(dim=1)
-            correct += (preds == labels).sum().item()
-            all_preds.extend(preds.cpu().tolist())
-            all_targets.extend(labels.cpu().tolist())
-    n = len(loader.dataset)
-    return total_loss / n, correct / n, _macro_f1(all_preds, all_targets, num_classes)
+    y_true, y_pred = [], []
+    for xs, ys in loader:
+        y_pred += model(xs.to(device)).argmax(1).cpu().tolist()
+        y_true += ys.tolist()
+    return macro_f1(y_true, y_pred, num_classes)
 
 
-# ---------------------------------------------------------------------------
-# train()  — callable from __main__ via --train / --scratch
-# ---------------------------------------------------------------------------
-
-def train(cfg, weights_path: Path) -> nn.Module:
-    device = get_device(cfg)
-    print(f"[cnn] device={device}  weights → {weights_path}")
-
-    c           = cfg["cnn"]
-    labels_csv  = Path(cfg["paths"]["input"]) / "images" / "labels.csv"
-    crops_dir   = Path(cfg["paths"]["crops"])
+# train one model: phase 1 with the base frozen (head only), phase 2 with everything trainable
+def train_model(mcfg, cfg, device):
+    c = cfg["cnn"]
     num_classes = cfg["num_classes"]
+    n = cfg["image_size"]
+    torch.manual_seed(cfg["seed"])
 
-    # build index dataset (transform=None; __getitem__ never called on this)
-    index_ds = CropDataset(crops_dir, labels_csv, transform=None)
-    train_idx, val_idx = _stratified_split(index_ds, val_frac=0.2, seed=cfg["seed"])
+    train_s, val_s = split_train_val(gather_samples(cfg), c["val_split"], cfg["seed"])
+    train_loader = DataLoader(ImageDataset(train_s, n), batch_size=c["batch_size"], shuffle=True)
+    val_loader = DataLoader(ImageDataset(val_s, n), batch_size=c["batch_size"])
 
-    # class weights from training labels only
-    train_labels = [index_ds.labels[i] for i in train_idx]
-    counts       = [train_labels.count(cl) for cl in range(num_classes)]
-    N            = len(train_labels)
-    cls_weights  = torch.tensor(
-        [N / (num_classes * max(cnt, 1)) for cnt in counts], dtype=torch.float32
-    ).to(device)
+    weight = class_weights([y for _, y in train_s], num_classes).to(device) if c["weighted_loss"] else None
+    criterion = nn.CrossEntropyLoss(label_smoothing=c["label_smoothing"], weight=weight)
 
-    # two datasets with appropriate transforms sharing the same CSV
-    train_ds = CropDataset(crops_dir, labels_csv, transform=_make_train_transform(cfg))
-    val_ds   = CropDataset(crops_dir, labels_csv, transform=make_transform(cfg))
+    model = build_model(mcfg, num_classes).to(device)
+    best_f1, best_state = -1.0, None
 
-    train_loader = DataLoader(
-        Subset(train_ds, train_idx), batch_size=c["batch_size"], shuffle=True, num_workers=0
-    )
-    val_loader = DataLoader(
-        Subset(val_ds, val_idx), batch_size=c["batch_size"], shuffle=False, num_workers=0
-    )
-
-    criterion = nn.CrossEntropyLoss(weight=cls_weights, label_smoothing=0.1)
-    model     = build_model(cfg).to(device)
-
-    # ── Phase A: head only ──────────────────────────────────────────────────
-    for p in model.features.parameters():
-        p.requires_grad_(False)
-
-    optimizer = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        lr=c["head"]["lr"],
-    )
-    print(f"\n[cnn] Phase A — head only  {c['head']['epochs']} epochs  lr={c['head']['lr']}")
-    for epoch in range(c["head"]["epochs"]):
-        tr_loss = _train_one_epoch(model, train_loader, criterion, optimizer, device)
-        vl_loss, vl_acc, vl_f1 = _eval_epoch(model, val_loader, criterion, device, num_classes)
-        print(
-            f"  A {epoch+1:02d}/{c['head']['epochs']}"
-            f"  train_loss={tr_loss:.4f}"
-            f"  val_loss={vl_loss:.4f}"
-            f"  val_acc={vl_acc:.3f}"
-            f"  val_f1={vl_f1:.3f}"
-        )
-
-    # ── Phase B: full fine-tune with early stopping ──────────────────────────
-    for p in model.features.parameters():
-        p.requires_grad_(True)
-
-    optimizer  = torch.optim.AdamW(model.parameters(), lr=c["full"]["lr"])
-    patience   = 8
-    best_f1    = -1.0
-    best_state = copy.deepcopy(model.state_dict())
-    no_improve = 0
-
-    print(f"\n[cnn] Phase B — full fine-tune  up to {c['full']['epochs']} epochs  lr={c['full']['lr']}  patience={patience}")
-    for epoch in range(c["full"]["epochs"]):
-        tr_loss = _train_one_epoch(model, train_loader, criterion, optimizer, device)
-        vl_loss, vl_acc, vl_f1 = _eval_epoch(model, val_loader, criterion, device, num_classes)
-
-        marker = ""
-        if vl_f1 > best_f1:
-            best_f1    = vl_f1
-            best_state = copy.deepcopy(model.state_dict())
-            no_improve = 0
-            marker     = " *"
-        else:
-            no_improve += 1
-
-        print(
-            f"  B {epoch+1:02d}/{c['full']['epochs']}"
-            f"  train_loss={tr_loss:.4f}"
-            f"  val_loss={vl_loss:.4f}"
-            f"  val_acc={vl_acc:.3f}"
-            f"  val_f1={vl_f1:.3f}{marker}"
-        )
-
-        if no_improve >= patience:
-            print(f"  [cnn] early stop — no val_f1 gain for {patience} consecutive epochs")
-            break
+    # each phase = (name, freeze the base?, epochs, lr, weight decay)
+    phases = [("head", True, mcfg["head"]["epochs"], mcfg["head"]["lr"], 0.0),
+              ("full", False, mcfg["full"]["epochs"], mcfg["full"]["lr"], c["weight_decay"])]
+    for phase, freeze, epochs, lr, wd in phases:
+        if epochs == 0:
+            continue
+        model.freeze_base(freeze)
+        params = [p for p in model.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=wd)
+        scheduler = cosine_warmup(optimizer, c["warmup_epochs"], epochs, len(train_loader))
+        for e in range(epochs):
+            loss = run_epoch(model, train_loader, criterion, optimizer, scheduler, device)
+            # keep the best epoch by val f1 (with no val set, keep the newest weights)
+            f1 = evaluate(model, val_loader, device, num_classes) if val_s else -1.0
+            if f1 >= best_f1:
+                best_f1, best_state = f1, copy.deepcopy(model.state_dict())
+            print(f"[{mcfg['name']} {phase} {e + 1}/{epochs}] loss={loss:.4f} "
+                  f"val_f1={f'{f1:.4f}' if val_s else 'n/a'}")
 
     model.load_state_dict(best_state)
-    weights_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), weights_path)
-    print(f"[cnn] saved best weights → {weights_path}  (best val_f1={best_f1:.3f})")
-    return model
+    dst = Path(c["checkpoints"])
+    dst.mkdir(parents=True, exist_ok=True)
+    torch.save({"model": mcfg, "state_dict": model.state_dict()}, dst / f"{mcfg['name']}.pt")
+    print(f"saved {dst / (mcfg['name'] + '.pt')}")
 
 
-# ---------------------------------------------------------------------------
-# scoring
-# ---------------------------------------------------------------------------
-
-def _score(cfg, model: nn.Module, device: torch.device):
-    views_dir  = Path(cfg["paths"]["views"])
-    scores_dir = Path(cfg["paths"]["scores"])
-    scores_dir.mkdir(parents=True, exist_ok=True)
-
-    tf      = make_transform(cfg)
-    active  = cfg["views"]["active"]
-    softmax = nn.Softmax(dim=1)
-    stems   = sorted({p.name.split("__")[0] for p in views_dir.glob("*.jpg")})
-
-    model.eval()
-    with torch.no_grad():
-        for stem in stems:
-            imgs = []
-            for v in active:
-                fp = views_dir / f"{stem}__{v}.jpg"
-                imgs.append(
-                    tf(Image.open(fp).convert("RGB"))
-                    if fp.exists()
-                    else torch.zeros(3, cfg["image_size"], cfg["image_size"])
-                )
-            batch = torch.stack(imgs).to(device)                         # (K, 3, H, W)
-            probs = softmax(model(batch)).cpu().numpy().astype("float32") # (K, 20)
-            np.save(scores_dir / f"{stem}.npy", probs)
-
-    print(f"[cnn] scores saved → {scores_dir}  ({len(stems)} stems)")
-
-
-# ---------------------------------------------------------------------------
-# public entry point — called by main.py
-# ---------------------------------------------------------------------------
-
-def run(cfg):
+# train every model listed in the config
+def train(cfg):
     device = get_device(cfg)
-    print(f"[cnn] device={device}")
+    for mcfg in cfg["cnn"]["models"]:
+        train_model(mcfg, cfg, device)
 
-    model        = build_model(cfg).to(device)
-    weights_path = Path("weights/cnn.pt")
 
-    if weights_path.exists():
-        model.load_state_dict(torch.load(weights_path, map_location=device))
-        print(f"[cnn] loaded weights from {weights_path}")
-    else:
-        print(f"[cnn] WARNING: {weights_path} not found — scoring with untrained head (pretrained backbone only)")
+# rebuild a model from its checkpoint file
+def load_model(mcfg, cfg, device):
+    path = Path(cfg["cnn"]["checkpoints"]) / f"{mcfg['name']}.pt"
+    if not path.exists():
+        raise SystemExit(f"missing {path} — run: uv run python src/cnn.py --train")
+    ckpt = torch.load(path, map_location=device)
+    # weights come from the checkpoint, so never re-download imagenet weights here
+    model = build_model(dict(ckpt["model"], pretrained=False), cfg["num_classes"])
+    model.load_state_dict(ckpt["state_dict"])
+    return model.to(device).eval()
 
-    _score(cfg, model, device)
+
+# score every crop: each model runs the K views in one batched forward, softmax (same as the example)
+@torch.no_grad()
+def run(cfg):
+    c = cfg["cnn"]
+    src = Path(cfg["paths"]["views"])
+    dst = Path(cfg["paths"]["scores"])
+    dst.mkdir(parents=True, exist_ok=True)
+    device = get_device(cfg)
+    n = cfg["image_size"]
+    active = cfg["views"]["active"]
+    models = [load_model(m, cfg, device) for m in c["models"]]
+    stems = sorted({p.name.split("__")[0] for p in src.glob("*.jpg")})
+    for s in stems:
+        x = torch.stack([to_tensor(src / f"{s}__{v}.jpg", n) for v in active]).to(device)
+        scores = [torch.softmax(m(x), dim=1).cpu().numpy().astype("float32") for m in models]
+        # stacked -> (M*K, C) so meta.py works unchanged, 3d -> (M, K, C)
+        np.save(dst / f"{s}.npy", np.concatenate(scores) if c["score_layout"] == "stacked" else np.stack(scores))
 
 
 # ---------------------------------------------------------------------------
@@ -349,18 +286,8 @@ def run(cfg):
 if __name__ == "__main__":
     import yaml
 
-    cfg = yaml.safe_load(open(Path(__file__).parent.parent / "config.yaml"))
-
-    parser = argparse.ArgumentParser(description="Stage C — CNN train / score")
-    parser.add_argument("--train",   action="store_true", help="train and save weights/cnn.pt")
-    parser.add_argument("--scratch", action="store_true", help="train from scratch (pretrained=False), save weights/cnn_scratch.pt")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train", action="store_true", help="train the models instead of scoring")
     args = parser.parse_args()
-
-    if args.scratch:
-        scratch_cfg = copy.deepcopy(cfg)
-        scratch_cfg["cnn"]["pretrained"] = False
-        train(scratch_cfg, Path("weights/cnn_scratch.pt"))
-    elif args.train:
-        train(cfg, Path("weights/cnn.pt"))
-    else:
-        run(cfg)
+    cfg = yaml.safe_load(open(Path(__file__).parent.parent / "config.yaml"))
+    train(cfg) if args.train else run(cfg)

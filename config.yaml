@@ -28,11 +28,29 @@ views:
 
 # part 3 — C
 cnn:
-  backbone: efficientnet_b0
-  pretrained: true
-  head: {epochs: 5, lr: 0.001}
-  full: {epochs: 30, lr: 0.0001}
+  labels: input/images/labels.csv
+  checkpoints: output/models
+  train_on: crops             # crops | views
+  val_split: 0.2
   batch_size: 32
+  label_smoothing: 0.1
+  weighted_loss: false        # inverse-frequency class weights in the loss
+  warmup_epochs: 1
+  weight_decay: 0.0001
+  score_layout: stacked       # stacked -> (M*K, C) | 3d -> (M, K, C)
+  models:                     # 1 entry = single model, 2 = side by side
+    - name: imagenet
+      type: timm              # timm | custom
+      backbone: efficientnet_b0
+      pretrained: true
+      head: {epochs: 5, lr: 0.001}    # base frozen, head only
+      full: {epochs: 30, lr: 0.0001}  # everything trains (0 = keep base locked)
+    - name: scratch
+      type: custom
+      channels: [32, 64, 128] # conv block sizes
+      hidden: [256]           # dense layer sizes before the output
+      head: {epochs: 0, lr: 0.001}
+      full: {epochs: 30, lr: 0.001}
 
 # part 4 — D
 meta:

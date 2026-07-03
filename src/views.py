@@ -4219,10 +4219,10 @@ def run(cfg):
     dst = Path(cfg["paths"]["views"])
     dst.mkdir(parents=True, exist_ok=True)
     active = cfg["views"]["active"]
-    for p in sorted(src.glob("*.jpg")):
+    for p in sorted(src.glob("*.png")):
         im = Image.open(p).convert("RGB")
         for v in active:  # k views
-            make(im, v).save(dst / f"{p.stem}__{v}.jpg")
+            make(im, v).save(dst / f"{p.stem}__{v}.png")
 
 
 if __name__ == "__main__":

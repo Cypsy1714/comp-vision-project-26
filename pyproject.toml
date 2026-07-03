@@ -6,6 +6,9 @@ dependencies = [
     "numpy",
     "pillow",
     "pyyaml",
+    "torch",
+    "ultralytics",
+    "torchvision",
 ]
 
 [tool.uv]

@@ -3551,6 +3551,123 @@ def make(im, v):
         return out
 
 
+    if v == "random_piece_swap":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = im.copy()
+
+        # Pick random piece size
+        piece_w = random.randint(max(20, w // 8), max(40, w // 3))
+        piece_h = random.randint(max(20, h // 8), max(40, h // 3))
+
+        # Pick first source position
+        x1 = random.randint(0, max(0, w - piece_w))
+        y1 = random.randint(0, max(0, h - piece_h))
+
+        # Pick second destination position
+        x2 = random.randint(0, max(0, w - piece_w))
+        y2 = random.randint(0, max(0, h - piece_h))
+
+        # Crop both pieces before pasting
+        piece_a = im.crop((x1, y1, x1 + piece_w, y1 + piece_h))
+        piece_b = im.crop((x2, y2, x2 + piece_w, y2 + piece_h))
+
+        # Swap their positions
+        out.paste(piece_a, (x2, y2))
+        out.paste(piece_b, (x1, y1))
+
+        return out
+    
+
+    if v == "double_piece_swap_purple_spatter":
+
+        im = im.convert("RGB")
+        w, h = im.size
+
+        out = im.copy()
+
+        changed_regions = []
+
+        # Apply two independent random piece swaps
+        for _ in range(2):
+
+            piece_w = random.randint(max(20, w // 10), max(40, w // 4))
+            piece_h = random.randint(max(20, h // 10), max(40, h // 4))
+
+            x1 = random.randint(0, max(0, w - piece_w))
+            y1 = random.randint(0, max(0, h - piece_h))
+
+            x2 = random.randint(0, max(0, w - piece_w))
+            y2 = random.randint(0, max(0, h - piece_h))
+
+            piece_a = out.crop((x1, y1, x1 + piece_w, y1 + piece_h))
+            piece_b = out.crop((x2, y2, x2 + piece_w, y2 + piece_h))
+
+            out.paste(piece_a, (x2, y2))
+            out.paste(piece_b, (x1, y1))
+
+            changed_regions.append((x1, y1, piece_w, piece_h))
+            changed_regions.append((x2, y2, piece_w, piece_h))
+
+        out = out.convert("RGBA")
+
+        # Tint swapped regions purple
+        purple_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        purple_draw = ImageDraw.Draw(purple_layer, "RGBA")
+
+        for x, y, pw, ph in changed_regions:
+            purple_draw.rectangle(
+                [x, y, x + pw, y + ph],
+                fill=(125, 45, 180, 95)
+            )
+
+        out = Image.alpha_composite(out, purple_layer)
+
+        # Add dark purple spatter only over changed regions
+        spatter_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        spatter_draw = ImageDraw.Draw(spatter_layer, "RGBA")
+
+        for x, y, pw, ph in changed_regions:
+
+            # Dense splatter inside each modified piece
+            for _ in range(random.randint(35, 90)):
+
+                cx = random.randint(x, min(w - 1, x + pw))
+                cy = random.randint(y, min(h - 1, y + ph))
+
+                base_r = random.randint(2, max(3, min(pw, ph) // 12))
+
+                color = random.choice([
+                    (45, 0, 80, random.randint(90, 170)),
+                    (70, 0, 115, random.randint(80, 155)),
+                    (95, 20, 140, random.randint(70, 145))
+                ])
+
+                # Build each spatter blob from smaller circles
+                for _ in range(random.randint(4, 12)):
+
+                    angle = random.uniform(0, 2 * math.pi)
+                    dist = random.uniform(0, base_r * 1.8)
+
+                    px = cx + int(math.cos(angle) * dist)
+                    py = cy + int(math.sin(angle) * dist)
+
+                    if x <= px <= x + pw and y <= py <= y + ph:
+                        r = random.randint(1, max(2, base_r // 2))
+
+                        spatter_draw.ellipse(
+                            [px - r, py - r, px + r, py + r],
+                            fill=color
+                        )
+
+        spatter_layer = spatter_layer.filter(ImageFilter.GaussianBlur(radius=0.45))
+
+        out = Image.alpha_composite(out, spatter_layer)
+
+        return out.convert("RGB")
+
     if v == "color_jitter":
         im = im.convert("RGB")
 

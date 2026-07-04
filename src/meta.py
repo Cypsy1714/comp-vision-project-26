@@ -335,6 +335,27 @@ def train(cfg, oof: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# rejected-input fill
+# ---------------------------------------------------------------------------
+
+def _missing_input_rows(cfg, have_stems) -> list[tuple[str, int]]:
+    """
+    (filename, -1) rows for input images that produced no score files — e.g.
+    the detector rejected them (reject_on_no_animal) — so predictions.csv
+    always covers every input image, in the MLP path and the fallback alike.
+    """
+    input_dir = Path(cfg["paths"]["input"])
+    if not input_dir.exists():
+        return []
+    stems = {
+        p.stem
+        for ext in ("*.jpg", "*.jpeg", "*.png")
+        for p in input_dir.glob(ext)
+    }
+    return [(f"{s}.jpg", -1) for s in sorted(stems - set(have_stems))]
+
+
+# ---------------------------------------------------------------------------
 # fallback: mean over all rows + threshold  (mirrors the original stub)
 # ---------------------------------------------------------------------------
 
@@ -362,11 +383,14 @@ def _run_fallback(cfg):
         if orig not in best or conf > best[orig][0]:
             best[orig] = (conf, cls)
 
+    rows = [(f"{stem}.jpg", best[stem][1]) for stem in sorted(best)]
+    rows += _missing_input_rows(cfg, best.keys())
+    rows.sort()
+
     with open(dst / "predictions.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["filename", "label"])
-        for stem in sorted(best):
-            w.writerow([f"{stem}.jpg", best[stem][1]])
+        w.writerows(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +461,9 @@ def run(cfg):
             else:
                 label = int(cls_logits.argmax(dim=1).item())
             rows.append((f"{stem}.jpg", label))
+
+    rows += _missing_input_rows(cfg, stem_feats.keys())
+    rows.sort()
 
     with open(dst / "predictions.csv", "w", newline="") as f:
         w = csv.writer(f)

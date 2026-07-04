@@ -4214,15 +4214,16 @@ def random_region_sudoku(im, region_size=0.5, grid=4):
     return out
 
 
-def run(cfg):
+def run(cfg, only=None):
+    # only = subset of active views to remake (per-epoch regeneration of the random ones)
     src = Path(cfg["paths"]["crops"])
     dst = Path(cfg["paths"]["views"])
     dst.mkdir(parents=True, exist_ok=True)
-    active = cfg["views"]["active"]
-    for p in sorted(src.glob("*.png")):
+    active = only or cfg["views"]["active"]
+    for p in sorted(list(src.glob("*.png")) + list(src.glob("*.jpg"))):
         im = Image.open(p).convert("RGB")
         for v in active:  # k views
-            make(im, v).save(dst / f"{p.stem}__{v}.png")
+            make(im, v).save(dst / f"{p.stem}__{v}.jpg")
 
 
 if __name__ == "__main__":

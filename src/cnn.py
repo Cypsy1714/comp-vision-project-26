@@ -126,11 +126,16 @@ def load_labels(path):
         return {Path(r["filename"]).stem: int(r["label"]) for r in csv.DictReader(f)}
 
 
-# open an image and turn it into a normalized (3, n, n) float tensor
-def to_tensor(path, n):
-    im = Image.open(path).convert("RGB").resize((n, n))
+# turn an already-open PIL image into a normalized (3, n, n) float tensor
+def image_to_tensor(im, n):
+    im = im.convert("RGB").resize((n, n))
     arr = (np.asarray(im, dtype="float32") / 255.0 - MEAN) / STD
     return torch.from_numpy(arr).permute(2, 0, 1)
+
+
+# same but starting from a file path
+def to_tensor(path, n):
+    return image_to_tensor(Image.open(path), n)
 
 
 # dataset over (image path, label) pairs
@@ -153,7 +158,8 @@ def gather_samples(cfg):
     folder = Path(cfg["paths"]["views" if c["train_on"] == "views" else "crops"])
     labels = load_labels(c["labels"])
     samples = []
-    for p in sorted(folder.glob("*.jpg")):
+    # detector saves .png (transparent padding), views save .jpg — take both
+    for p in sorted(list(folder.glob("*.jpg")) + list(folder.glob("*.png"))):
         label = labels.get(original_stem(p.stem), -1)
         if label != -1:
             samples.append((p, label))
@@ -199,7 +205,7 @@ def evaluate(model, loader, device, num_classes):
 
 
 # train one model: phase 1 with the base frozen (head only), phase 2 with everything trainable
-def train_model(mcfg, cfg, device):
+def train_model(mcfg, cfg, device, epoch_hook=None):
     c = cfg["cnn"]
     num_classes = cfg["num_classes"]
     n = cfg["image_size"]
@@ -226,6 +232,8 @@ def train_model(mcfg, cfg, device):
         optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=wd)
         scheduler = cosine_warmup(optimizer, c["warmup_epochs"], epochs, len(train_loader))
         for e in range(epochs):
+            if epoch_hook:
+                epoch_hook()  # main.py uses this to remake the random views each epoch
             loss = run_epoch(model, train_loader, criterion, optimizer, scheduler, device)
             # keep the best epoch by val f1 (with no val set, keep the newest weights)
             f1 = evaluate(model, val_loader, device, num_classes) if val_s else -1.0
@@ -242,10 +250,10 @@ def train_model(mcfg, cfg, device):
 
 
 # train every model listed in the config
-def train(cfg):
+def train(cfg, epoch_hook=None):
     device = get_device(cfg)
     for mcfg in cfg["cnn"]["models"]:
-        train_model(mcfg, cfg, device)
+        train_model(mcfg, cfg, device, epoch_hook)
 
 
 # rebuild a model from its checkpoint file

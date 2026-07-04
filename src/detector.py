@@ -51,8 +51,8 @@ class DetectionResult:
         candidates: Cat/dog crops sorted by area DESC and capped at
             ``max_candidates``. Empty when nothing was found.
         signals: Exactly the five :data:`SIGNAL_KEYS`, all floats.
-        fallback_crop: A center crop of the image, used by downstream code when
-            ``candidates`` is empty.
+        fallback_crop: The full image resized to the output square, used by
+            downstream code when ``candidates`` is empty.
     """
 
     candidates: list[Candidate]
@@ -100,18 +100,6 @@ def crop_with_pad(
     right = max(right, left + 1)
     bottom = max(bottom, top + 1)
     return image.crop((left, top, right, bottom))
-
-def center_crop_fallback(image: Image.Image, frac: float = 0.9) -> Image.Image:
-    """Return a centered crop covering ``frac`` of each dimension.
-
-    Used when the detector finds no target animal, so the classifier still gets
-    a reasonable, mostly-centered view instead of the raw frame.
-    """
-    w, h = image.size
-    cw, ch = max(int(w * frac), 1), max(int(h * frac), 1)
-    left = (w - cw) // 2
-    top = (h - ch) // 2
-    return image.crop((left, top, left + cw, top + ch))
 
 # Lanczos resampling anti-aliases whether the crop is scaled up or down.
 _RESAMPLE = Image.Resampling.LANCZOS
@@ -211,9 +199,9 @@ class YoloDetector(Detector):
     Config keys (all optional, sensible defaults shown):
         weights ("yolo11n.pt"), det_conf (0.25), crop_pad (0.08), imgsz (640),
         device ("auto"), target_classes (["cat", "dog"]),
-        include_other_animals (False), max_candidates (5),
-        on_no_detection ("fallback"). Also accepts ``conf`` as an alias for
-        ``det_conf`` and optional ``cat_id`` / ``dog_id`` overrides.
+        include_other_animals (False), max_candidates (5). Also accepts
+        ``conf`` as an alias for ``det_conf`` and optional ``cat_id`` /
+        ``dog_id`` overrides.
     """
 
     def __init__(self, cfg=None):
@@ -224,7 +212,6 @@ class YoloDetector(Detector):
         self.imgsz = int(_cfg_get(cfg, "imgsz", 640))
         self.max_candidates = int(_cfg_get(cfg, "max_candidates", 5))
         self.include_other_animals = bool(_cfg_get(cfg, "include_other_animals", False))
-        self.on_no_detection = _cfg_get(cfg, "on_no_detection", "fallback")
         self.device = _resolve_device(_cfg_get(cfg, "device", "auto"))
 
         # Every saved crop is forced to this square size. ``output_size`` is the
@@ -278,9 +265,7 @@ class YoloDetector(Detector):
         w, h = image.size
         area = float(w * h)
         signals = new_signals()
-        fallback = resize_to_output(
-            center_crop_fallback(image), self.output_size, self.resize_mode
-        )
+        fallback = resize_to_output(image, self.output_size, self.resize_mode)
 
         results = self.model(
             image,
@@ -358,12 +343,13 @@ def _iter_images(folder: Path):
     yield from sorted(p for ext in EXTS for p in folder.glob(ext))
 
 
-def run(cfg):
+def run(cfg, training=False):
     src = Path(cfg["paths"]["input"])
     dst = Path(cfg["paths"]["crops"])
     dst.mkdir(parents=True, exist_ok=True)
 
     detector = build_detector(cfg)
+    reject = bool(_cfg_get(cfg.get("detector", {}), "reject_on_no_animal", False))
 
     for path in _iter_images(src):
         image = Image.open(path).convert("RGB")
@@ -372,6 +358,14 @@ def run(cfg):
             # Transparent-padded ("fit") crops need PNG to keep the alpha.
             ext = "png" if cand.crop.mode == "RGBA" else "jpg"
             cand.crop.save(dst / f"{path.stem}_cand{k}.{ext}")
+
+        # No animal found: with reject_on_no_animal we write nothing so the
+        # image is rejected downstream; otherwise (and always in training, so
+        # no image is lost) the full-image fallback becomes the crop.
+        if not result.candidates and (training or not reject):
+            fb = result.fallback_crop
+            ext = "png" if fb.mode == "RGBA" else "jpg"
+            fb.save(dst / f"{path.stem}_cand0.{ext}")
 
         s = result.signals
         per_cand = " ".join(

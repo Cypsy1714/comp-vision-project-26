@@ -8,8 +8,8 @@ device: auto
 pipeline: [detector, views, cnn, meta]
 
 paths:
-  input: input
-  crops: input/views_test
+  input: input/images
+  crops: output/crops
   views: output/views
   scores: output/scores
   preds: output/predictions
@@ -18,19 +18,20 @@ paths:
 detector:
   weights: yolo11l.pt
   conf: 0.25
-  reject_on_no_animal: true   # toggle
+  reject_on_no_animal: true   # true = no animal -> reject (-1), no crop; false = full image becomes the crop. training always keeps the full-image crop
   output_size: 224            # every saved crop is forced to this square size
   resize_mode: fit            # "fit" = keep aspect + transparent padding, "stretch" = distort to fill
 
 # part 2 — B
 views:
-  active: [clean, hflip, blur, gray, sobel, more_blur, most_blur, perspective, wave, pop_art, strong_pop_art, picasso, triangle_sudoku, random_sudoku_region, cartoon, extra_perspective, sudoku, solarize, solarize_light, solarize_dark, posterize, equalize, color_jitter, comic_clean, inception_fold, hide_and_seek, random_value_fill, warhol_random_fill, random_shape_occluder, grid_dropout, art_nouveau, bauhaus, spatter, superman_laser_eyes, frost, affine_translate, affine_scale, sudoku_quarter_mix, complementary_colors, opposite_colors, opposite_complementary_shuffle, red_green_duotone, red_green_grid, red_green_grid_mirror_red_restore, mirror_wave, anime, advanced_anime, random_thick_line, random_yellow_frame, drunk, blackout, elastic_transform, center_shrink_fill_fragments, center_shrink_bauhaus_fill, center_bauhaus_fragments_fill, split_overlay_gradient_bg, wrap_roll, gaussian_noise, upside_down, upside_noise_wave, multiplicative_noise, neighbor_majority_20000, neighbor_majority_25000_sudoku, color_quantization, snow, rain_streaks, horizontal_stretch, mosaic_4_tile, mosaic_4_random_effects, cross_hatching, post_impressionist, classic_disney, stylized_imagenet, fenerbahce, white_concrete_da_vinci, approx_living_fenerbahce_da_vinci_upside_down, circular_ripple, smiley_overlay, golden_edges, outer_edges_random_value_fill, outer_edges_random_value_fill_wave_zoom, orange_noir_jazz, orange_noir_expansion, transparent_checker_grid_pieces, shape_cutout_blur_background, cutout_orange_noir_background, random_piece_swap, double_piece_swap_purple_spatter, vivid_cubist, vivid_cubist_random_fill_frost_bauhaus]   # K = length of this list
+  active: [clean, hflip, blur, gray, sobel,wave, strong_pop_art,triangle_sudoku, random_sudoku_region, sudoku, solarize, posterize, equalize, color_jitter, hide_and_seek, random_value_fill, warhol_random_fill, random_shape_occluder, grid_dropout, art_nouveau, bauhaus]   # K = length of this list
+  regenerate: []              # random views remade before every training epoch (fresh corruption); [] = off, only makes sense with cnn.train_on: views
 
 # part 3 — C
 cnn:
   labels: input/images/labels.csv
   checkpoints: output/models
-  train_on: crops             # crops | views
+  train_on: views             # crops | views
   val_split: 0.2
   batch_size: 32
   label_smoothing: 0.1
@@ -43,14 +44,14 @@ cnn:
       type: timm              # timm | custom
       backbone: efficientnet_b0
       pretrained: true
-      head: {epochs: 5, lr: 0.001}    # base frozen, head only
-      full: {epochs: 30, lr: 0.0001}  # everything trains (0 = keep base locked)
+      head: {epochs: 3, lr: 0.001}    # base frozen, head only
+      full: {epochs: 5, lr: 0.0001}  # everything trains (0 = keep base locked)
     - name: scratch
       type: custom
       channels: [32, 64, 128] # conv block sizes
       hidden: [256]           # dense layer sizes before the output
       head: {epochs: 0, lr: 0.001}
-      full: {epochs: 30, lr: 0.001}
+      full: {epochs: 10, lr: 0.001}
 
 # part 4 — D
 meta:

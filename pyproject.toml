@@ -10,6 +10,9 @@ dependencies = [
     "torch",
     "ultralytics",
     "torchvision",
+    "pandas>=3.0.3",
+    "scikit-learn>=1.9.0",
+    "tqdm>=4.68.3",
 ]
 
 [tool.uv]

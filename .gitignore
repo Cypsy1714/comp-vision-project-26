@@ -33,3 +33,7 @@ test_sets/**/*.json
 .DS_Store
 .idea/
 .vscode/
+
+# Outputs and inputs
+.input/
+.output/

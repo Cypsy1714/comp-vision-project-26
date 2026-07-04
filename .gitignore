@@ -35,5 +35,5 @@ test_sets/**/*.json
 .vscode/
 
 # Outputs and inputs
-.input/
-.output/
+input/
+output/
